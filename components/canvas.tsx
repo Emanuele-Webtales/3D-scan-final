@@ -10,7 +10,7 @@ extend(THREE as any);
 export const WebGPUCanvas = (props: CanvasProps) => {
   return (
     <Canvas
-    className='border-2 border-purple-500'
+    
       {...props}
       flat
       gl={async (props) => {

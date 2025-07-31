@@ -3,12 +3,13 @@ import { motion, useMotionValue, useTransform } from "framer-motion"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
 // import { ComponentMessage } from "https://framer.com/m/Utils-FINc.js"
 
-//Working version
+//Working version Lalala
 
 interface PixelateSvgFilterProps {
     id: string
     size?: number
     crossLayers?: boolean
+    debug?: boolean
 }
 
 function PixelateSvgFilter({
@@ -16,62 +17,43 @@ function PixelateSvgFilter({
     size = 16,
     crossLayers = false,
 }: PixelateSvgFilterProps) {
-    // Ensure minimum size and create adaptive parameters
-    const effectiveSize = Math.max(0.5, size)
-    const isLowPixelation = size <= 2
-    
     return (
-        <svg className="absolute inset-0">
+        <svg>
             <defs>
                 <filter id={id} x="0" y="0" width="1" height="1">
-                    {isLowPixelation ? (
-                        // High quality mode for low pixelation
-                        <>
-                            <feGaussianBlur stdDeviation={effectiveSize * 0.1} result="blurred" />
-                            <feComponentTransfer in="blurred" result="enhanced">
-                                <feFuncR type="linear" slope="1.1" intercept="-0.05" />
-                                <feFuncG type="linear" slope="1.1" intercept="-0.05" />
-                                <feFuncB type="linear" slope="1.1" intercept="-0.05" />
-                            </feComponentTransfer>
-                        </>
-                    ) : (
-                        // Standard pixelation for higher values
-                        <>
-                            {"First layer: Normal pixelation effect"}
-                            <feConvolveMatrix
-                                kernelMatrix="1 1 1
-                                              1 1 1
-                                              1 1 1"
-                                result="AVG"
-                            />
-                            <feFlood x="1" y="1" width="1" height="1" />
-                            <feComposite
-                                operator="arithmetic"
-                                k1="0"
-                                k2="1"
-                                k3="0"
-                                k4="0"
-                                width={effectiveSize}
-                                height={effectiveSize}
-                            />
-                            <feTile result="TILE" />
-                            <feComposite
-                                in="AVG"
-                                in2="TILE"
-                                operator="in"
-                                k1="0"
-                                k2="1"
-                                k3="0"
-                                k4="0"
-                            />
-                            <feMorphology
-                                operator="dilate"
-                                radius={effectiveSize / 2}
-                                result={"NORMAL"}
-                            />
-                        </>
-                    )}
-                    {crossLayers && !isLowPixelation && (
+                    {"First layer: Normal pixelation effect"}
+                    <feConvolveMatrix
+                        kernelMatrix="1 1 1
+                                      1 1 1
+                                      1 1 1"
+                        result="AVG"
+                    />
+                    <feFlood x="1" y="1" width="1" height="1" />
+                    <feComposite
+                        operator="arithmetic"
+                        k1="0"
+                        k2="1"
+                        k3="0"
+                        k4="0"
+                        width={size}
+                        height={size}
+                    />
+                    <feTile result="TILE" />
+                    <feComposite
+                        in="AVG"
+                        in2="TILE"
+                        operator="in"
+                        k1="0"
+                        k2="1"
+                        k3="0"
+                        k4="0"
+                    />
+                    <feMorphology
+                        operator="dilate"
+                        radius={size / 2}
+                        result={"NORMAL"}
+                    />
+                    {crossLayers && (
                         <>
                             {"Second layer: Fallback with full-width tiling"}
                             <feConvolveMatrix
@@ -88,8 +70,8 @@ function PixelateSvgFilter({
                                 k2="1"
                                 k3="0"
                                 k4="0"
-                                width={effectiveSize / 2}
-                                height={effectiveSize}
+                                width={size / 2}
+                                height={size}
                             />
                             <feTile result="TILE" />
                             <feComposite
@@ -103,7 +85,7 @@ function PixelateSvgFilter({
                             />
                             <feMorphology
                                 operator="dilate"
-                                radius={effectiveSize / 2}
+                                radius={size / 2}
                                 result={"FALLBACKX"}
                             />
                             {"Third layer: Fallback with full-height tiling"}
@@ -121,8 +103,8 @@ function PixelateSvgFilter({
                                 k2="1"
                                 k3="0"
                                 k4="0"
-                                width={effectiveSize}
-                                height={effectiveSize / 2}
+                                width={size}
+                                height={size / 2}
                             />
                             <feTile result="TILE" />
                             <feComposite
@@ -136,7 +118,7 @@ function PixelateSvgFilter({
                             />
                             <feMorphology
                                 operator="dilate"
-                                radius={effectiveSize / 2}
+                                radius={size / 2}
                                 result={"FALLBACKY"}
                             />
                             <feMerge>
@@ -146,9 +128,7 @@ function PixelateSvgFilter({
                             </feMerge>
                         </>
                     )}
-                    {!crossLayers && (
-                        <feMergeNode in={isLowPixelation ? "enhanced" : "NORMAL"} />
-                    )}
+                    {!crossLayers && <feMergeNode in="NORMAL" />}
                 </filter>
             </defs>
         </svg>
@@ -163,7 +143,16 @@ function PixelateSvgFilter({
  * @framerIntrinsicHeight 300
  */
 export default function PixelateComponent(props:any) {
-    const { image, strength, pixelateMode, hoverArea, safeArea, removeFilterAtMin, style } = props
+    const {
+        image,
+        strength,
+        pixelateMode,
+        hoverArea,
+        safeArea,
+        removeFilterAtMin,
+        debug,
+        style,
+    } = props
 
     const containerRef = useRef<HTMLDivElement>(null)
     const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
@@ -217,16 +206,19 @@ export default function PixelateComponent(props:any) {
                 rect.width * rect.width + rect.height * rect.height
             )
             const expandedRadius = (diagonalDistance / 2) * (hoverArea / 100)
-            
+
             // Calculate safe area radius (inner zone with constant effect)
             const safeAreaRadius = (diagonalDistance / 2) * (safeArea / 100)
-            
+
             // Calculate distance from safe area edge, not center
             const effectiveDistance = Math.max(0, distance - safeAreaRadius)
             const effectiveRadius = Math.max(1, expandedRadius - safeAreaRadius)
-            
+
             // Normalize distance relative to the effective radius
-            const normalizedDistance = Math.min(1, effectiveDistance / effectiveRadius)
+            const normalizedDistance = Math.min(
+                1,
+                effectiveDistance / effectiveRadius
+            )
 
             // Reverse the effect based on pixelate mode
             const finalDistance =
@@ -235,8 +227,7 @@ export default function PixelateComponent(props:any) {
                     : 1 - normalizedDistance
 
             const newPixelation =
-                minPixelation +
-                (maxPixelation - minPixelation) * finalDistance
+                minPixelation + (maxPixelation - minPixelation) * finalDistance
 
             pixelationSize.set(newPixelation)
 
@@ -272,7 +263,7 @@ export default function PixelateComponent(props:any) {
     useEffect(() => {
         if (isCanvas || !containerRef.current) return
 
-        const handleGlobalMouseMove = (event:MouseEvent) => {
+        const handleGlobalMouseMove = (event: MouseEvent) => {
             if (!containerRef.current) return
 
             const rect = containerRef.current.getBoundingClientRect()
@@ -348,7 +339,7 @@ export default function PixelateComponent(props:any) {
                 height: "100%",
                 overflow: "hidden",
                 cursor: "crosshair",
-                border: "1px solid red",
+                //border: "1px solid red",
             }}
             onMouseMove={handleMouseMove}
             onMouseEnter={handleMouseEnter}
@@ -374,13 +365,17 @@ export default function PixelateComponent(props:any) {
                     height: `calc(100% + ${(props.strength / 100) * 128}px)`,
                     objectFit: "cover",
                     backgroundPosition: "center center",
-                    filter: isCanvas || (removeFilterAtMin && smoothedPixelation.get() <= 1) ? "none" : "url(#pixelate-filter)",
+                    filter:
+                        isCanvas ||
+                        (removeFilterAtMin && smoothedPixelation.get() <= 1)
+                            ? "none"
+                            : "url(#pixelate-filter)",
                     transition: "filter 0.1s ease-out",
                 }}
             />
 
             {/* Debug overlay (only when hovering) */}
-            {isHovering && (
+            {isHovering && debug && (
                 <div
                     style={{
                         position: "absolute",
@@ -447,7 +442,6 @@ addPropertyControls(PixelateComponent, {
     image: {
         type: ControlType.ResponsiveImage,
         title: "Image",
-        description: "Select the image to apply pixelation effect to",
     },
     strength: {
         type: ControlType.Number,
@@ -457,7 +451,6 @@ addPropertyControls(PixelateComponent, {
         step: 1,
         defaultValue: 50,
         unit: "%",
-        description: "100%: 1px to 128px. 1%: 2px to 1px",
     },
     pixelateMode: {
         type: ControlType.Enum,
@@ -467,8 +460,6 @@ addPropertyControls(PixelateComponent, {
         defaultValue: "pixelate",
         displaySegmentedControl: true,
         segmentedControlDirection: "vertical",
-        description:
-            "Pixelate: More pixelation at edges. Depixelate: More pixelation at center",
     },
     hoverArea: {
         type: ControlType.Number,
@@ -478,8 +469,6 @@ addPropertyControls(PixelateComponent, {
         step: 5,
         defaultValue: 100,
         unit: "%",
-        description:
-            "Expands hover detection radius. 100% = component size, 200% = double radius, etc.",
     },
     safeArea: {
         type: ControlType.Number,
@@ -489,8 +478,6 @@ addPropertyControls(PixelateComponent, {
         step: 1,
         defaultValue: 10,
         unit: "%",
-        description:
-            "Inner zone with constant effect. 0% = effect starts from center, 20% = 20% radius with constant effect.",
     },
     removeFilterAtMin: {
         type: ControlType.Boolean,
@@ -498,6 +485,11 @@ addPropertyControls(PixelateComponent, {
         defaultValue: true,
         description:
             "When enabled, removes SVG filter at minimum pixelation for clean image. When disabled, keeps filter with lowest settings.",
+    },
+    debug: {
+        type: ControlType.Boolean,
+        title: "Debug panel",
+        defaultValue: true,
     },
 })
 

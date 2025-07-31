@@ -457,6 +457,11 @@ const Html = () => {
 	const [progress, setProgress] = useState(0);
 	const [isHovering, setIsHovering] = useState(false);
 	const [autoProgress, setAutoProgress] = useState(0);
+	const [transitionComplete, setTransitionComplete] = useState(false);
+	const [isTransitioning, setIsTransitioning] = useState(false);
+	const [transitionStartProgress, setTransitionStartProgress] = useState(0);
+	const [transitionTargetProgress, setTransitionTargetProgress] = useState(0);
+	const [transitionStartTime, setTransitionStartTime] = useState(0);
 	const containerRef = useRef<HTMLDivElement>(null);
 
 	// Debug controls state
@@ -549,17 +554,33 @@ const Html = () => {
 		
 		setMouseY(clampedY);
 		
-		// In hybrid mode, smoothly transition to cursor position
+		// In hybrid mode, handle cursor following
 		if (controls.hybridMode && isHovering) {
-			gsap.to({}, {
-				duration: 0.2,
-				onUpdate: function() {
-					const targetProgress = clampedY;
-					const currentProgress = progress;
-					setProgress(currentProgress + (targetProgress - currentProgress) * this.progress());
+			if (isTransitioning) {
+				// During transition, continuously update target and interpolate
+				setTransitionTargetProgress(clampedY);
+				const elapsed = (Date.now() - transitionStartTime) / 1000;
+				const transitionProgress = Math.min(elapsed / 0.3, 1);
+		
+				// Apply ease-in-out easing
+				const easedProgress = transitionProgress < 0.3 
+					? 2 * transitionProgress * transitionProgress 
+					: 1 - Math.pow(-2 * transitionProgress + 2, 2) / 2;
+				
+				// Smooth interpolation from start to current target
+				const interpolatedProgress = transitionStartProgress + (clampedY - transitionStartProgress) * easedProgress;
+				setProgress(interpolatedProgress);
+				
+				// Check if transition is complete
+				if (transitionProgress >= 1) {
+					setIsTransitioning(false);
+					setTransitionComplete(true);
 				}
-			});
-		} else {
+			} else if (transitionComplete) {
+				// After transition, follow cursor instantly
+				setProgress(clampedY);
+			}
+		} else if (!controls.hybridMode) {
 			// Invert the progress so that top = 0 (no scan) and bottom = 1 (full scan)
 			// This matches the expected behavior where scanning progresses from top to bottom
 			setProgress(clampedY);
@@ -569,11 +590,17 @@ const Html = () => {
 	// Handle mouse entering the container
 	const handleMouseEnter = () => {
 		setIsHovering(true);
+		setTransitionComplete(false);
+		setIsTransitioning(true);
+		setTransitionStartProgress(progress);
+		setTransitionStartTime(Date.now());
 	};
 
 	// Handle mouse leaving the container
 	const handleMouseLeave = () => {
 		setIsHovering(false);
+		setTransitionComplete(false);
+		setIsTransitioning(false);
 		if (!controls.autoProgress && !controls.loopEnabled && !controls.hybridMode) {
 			setMouseY(0);
 			setProgress(0); // Reset to no scanning when mouse leaves

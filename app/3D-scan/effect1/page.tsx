@@ -665,10 +665,10 @@ const Html = () => {
 				// During transition, continuously update target and interpolate
 				setTransitionTargetProgress(clampedY);
 				const elapsed = (Date.now() - transitionStartTime) / 1000;
-				const transitionProgress = Math.min(elapsed / 0.3, 1);
+				const transitionProgress = Math.min(elapsed / 0.4, 1);
 		
 				// Apply ease-in-out easing
-				const easedProgress = transitionProgress < 0.3 
+				const easedProgress = transitionProgress < 0.4
 					? 2 * transitionProgress * transitionProgress 
 					: 1 - Math.pow(-2 * transitionProgress + 2, 2) / 2;
 				
@@ -758,7 +758,7 @@ const Html = () => {
 			
 			{/* Main container with mouse tracking */}
 			<div 
-				className="h-[50vh] rounded-3xl overflow-hidden relative w-[60%] h-[60%]"
+				className=" rounded-3xl overflow-hidden relative w-[40%] h-[40%]"
 				ref={containerRef}
 				onMouseMove={handleMouseMove}
 				onMouseEnter={handleMouseEnter}

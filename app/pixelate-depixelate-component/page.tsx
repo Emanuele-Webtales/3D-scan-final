@@ -360,9 +360,9 @@ export default function PixelateComponent(props:any) {
                 alt={image?.alt || "Pixelated image"}
                 style={{
                     position: "absolute",
-                    inset: -(props.strength / 100) * 64,
-                    width: `calc(100% + ${(props.strength / 100) * 128}px)`,
-                    height: `calc(100% + ${(props.strength / 100) * 128}px)`,
+                    inset: -(props.strength / 100) * 48,
+                    width: `calc(100% + ${(props.strength / 100) * 92}px)`,
+                    height: `calc(100% + ${(props.strength / 100) * 92}px)`,
                     objectFit: "cover",
                     backgroundPosition: "center center",
                     filter:

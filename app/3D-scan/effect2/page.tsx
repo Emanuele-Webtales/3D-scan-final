@@ -24,9 +24,9 @@ import { useGSAP } from '@gsap/react';
 import { PostProcessing } from '@/app/3D-scan/3D-scan-components/post-processing';
 import { ContextProvider, GlobalContext } from '@/context';
 
-import TEXTUREMAP from '@/assets/raw-2.png';
-import DEPTHMAP from '@/assets/depth-2.png';
-import EDGEMAP from '@/assets/edge-2.png';
+import TEXTUREMAP from '@/app/3D-scan/3D-scan-assets/raw-2.png';
+import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/depth-2.png';
+import EDGEMAP from '@/app/3D-scan/3D-scan-assets/edge-2.png';
 
 const tomorrow = Tomorrow({
   weight: '600',

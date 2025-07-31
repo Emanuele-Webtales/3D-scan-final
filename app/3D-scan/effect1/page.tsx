@@ -68,6 +68,8 @@ interface DebugControls {
 	scanStrength: number;
 	scanColor: [number, number, number];
 	scanIntensity: number;
+	scanMode: 'dots' | 'line';
+	lineWidth: number;
 	
 	// Tiling and pattern controls
 	tilingAmount: number;
@@ -83,6 +85,8 @@ interface DebugControls {
 	// Visual controls
 	showDebugInfo: boolean;
 	showControls: boolean;
+	hideImages: boolean;
+	backgroundColor: [number, number, number];
 }
 
 // Scene component that renders the 3D scanning effect
@@ -122,10 +126,9 @@ const Scene = ({
 		// Create the main texture with displacement based on depth
 		// uv() gives us the current pixel coordinates (0-1 range)
 		// We add a displacement based on the depth map and mouse position
-		const tMap = texture(
-			rawMap,
-			uv().add(tDepthMap.r.mul(uPointer).mul(strength))
-		);
+		const tMap = controls.hideImages 
+			? vec3(...controls.backgroundColor) // Custom background color when images are hidden
+			: texture(rawMap, uv().add(tDepthMap.r.mul(uPointer).mul(strength)));
 
 		// Calculate aspect ratio to maintain proper proportions
 		const aspect = float(WIDTH).div(HEIGHT);
@@ -151,15 +154,36 @@ const Scene = ({
 		// Get the depth value for the current pixel
 		const depth = tDepthMap;
 
-		// Create the scanning flow effect
-		// This creates a smooth transition based on the difference between
-		// the current depth and the progress value
-		// oneMinus inverts the result so the effect flows from top to bottom
-		const flow = oneMinus(smoothstep(0, 0.02, abs(depth.sub(uProgress))));
-
-		// Combine the dot pattern with the flow to create the scanning mask
-		// scanColor and scanIntensity are now controlled by debug panel
-		const mask = dot.mul(flow).mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
+		// Create the scanning flow effect based on mode
+		let flow;
+		let mask;
+		
+		if (controls.scanMode === 'dots') {
+			// Original dot-based scanning effect
+			flow = oneMinus(smoothstep(0, 0.02, abs(depth.sub(uProgress))));
+			mask = dot.mul(flow).mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
+		} else {
+			// True continuous line scanning effect - no dots, no tiling
+			const depthValue = depth.r;
+			const lineCenter = uProgress;
+			const lineWidth = float(controls.lineWidth);
+			
+			// Create a clean, sharp line based purely on depth proximity
+			// This creates a continuous line without any dot pattern
+			const lineMask = smoothstep(lineCenter.sub(lineWidth), lineCenter, depthValue)
+				.mul(smoothstep(lineCenter.add(lineWidth), lineCenter, depthValue));
+			
+			// Create a very thin, sharp core for crispness
+			const coreWidth = lineWidth.div(8);
+			const coreMask = smoothstep(lineCenter.sub(coreWidth), lineCenter, depthValue)
+				.mul(smoothstep(lineCenter.add(coreWidth), lineCenter, depthValue));
+			
+			// Combine with minimal bloom for clean line
+			const combinedMask = coreMask.add(lineMask.mul(0.2));
+			
+			// Apply with reduced intensity for cleaner look
+			mask = combinedMask.mul(vec3(...controls.scanColor)).mul(controls.scanIntensity * 0.3);
+		}
 
 		// Blend the original texture with the scanning mask
 		// blendScreen creates a bright overlay effect
@@ -265,6 +289,31 @@ const DebugPanel = ({
 					<div className="border-b flex flex-col gap-2 border-gray-600 pb-2">
 						<h4 className="font-semibold mb-2">Scanning Effect</h4>
 						<div className="space-y-2">
+							<div>
+								<label className="block text-xs mb-1">Scan Mode</label>
+								<select
+									value={controls.scanMode}
+									onChange={(e) => updateControl('scanMode', e.target.value as 'dots' | 'line')}
+									className="w-full bg-gray-700 text-white px-2 py-1 rounded text-xs"
+								>
+									<option value="dots">Dots Pattern</option>
+									<option value="line">Wide Line</option>
+								</select>
+							</div>
+							{controls.scanMode === 'line' && (
+								<div>
+									<label className="block text-xs mb-1">Line Width: {controls.lineWidth.toFixed(3)}</label>
+									<input
+										type="range"
+										min="0.005"
+										max="0.1"
+										step="0.001"
+										value={controls.lineWidth}
+										onChange={(e) => updateControl('lineWidth', parseFloat(e.target.value))}
+										className="w-full"
+									/>
+								</div>
+							)}
 							<div>
 								<label className="block text-xs mb-1">Scan Strength: {controls.scanStrength.toFixed(3)}</label>
 								<input
@@ -422,6 +471,51 @@ const DebugPanel = ({
 							<label className="flex items-center">
 								<input
 									type="checkbox"
+									checked={controls.hideImages}
+									onChange={(e) => updateControl('hideImages', e.target.checked)}
+									className="mr-2"
+								/>
+								Hide Background Images
+							</label>
+							{controls.hideImages && (
+								<div className="ml-4 space-y-2">
+									<div className='flex flex-col gap-2'>
+										<label className="block text-xs mb-1">Background Color (R, G, B)</label>
+										<div className="flex flex-col space-x-2">
+											<input
+												type="range"
+												min="0"
+												max="1"
+												step="0.1"
+												value={controls.backgroundColor[0]}
+												onChange={(e) => updateControl('backgroundColor', [parseFloat(e.target.value), controls.backgroundColor[1], controls.backgroundColor[2]])}
+												className="flex-1"
+											/>
+											<input
+												type="range"
+												min="0"
+												max="1"
+												step="0.1"
+												value={controls.backgroundColor[1]}
+												onChange={(e) => updateControl('backgroundColor', [controls.backgroundColor[0], parseFloat(e.target.value), controls.backgroundColor[2]])}
+												className="flex-1"
+											/>
+											<input
+												type="range"
+												min="0"
+												max="1"
+												step="0.1"
+												value={controls.backgroundColor[2]}
+												onChange={(e) => updateControl('backgroundColor', [controls.backgroundColor[0], controls.backgroundColor[1], parseFloat(e.target.value)])}
+												className="flex-1"
+											/>
+										</div>
+									</div>
+								</div>
+							)}
+							<label className="flex items-center">
+								<input
+									type="checkbox"
 									checked={controls.showDebugInfo}
 									onChange={(e) => updateControl('showDebugInfo', e.target.checked)}
 									className="mr-2"
@@ -472,8 +566,10 @@ const Html = () => {
 		
 		// Scanning effect controls
 		scanStrength: 0.01,
-		scanColor: [10, 0, 0], // Red color
-		scanIntensity: 10,
+		scanColor: [5, 5, 5], // Subtle white color for line mode
+		scanIntensity: 3,
+		scanMode: 'line',
+		lineWidth: 0.01,
 		
 		// Tiling and pattern controls
 		tilingAmount: 120,
@@ -489,6 +585,8 @@ const Html = () => {
 		// Visual controls
 		showDebugInfo: true,
 		showControls: true,
+		hideImages: false,
+		backgroundColor: [0, 0, 0], // Black background
 	});
 
 	// Auto progress animation

@@ -57,8 +57,8 @@ import * as THREE from 'three/webgpu';
 import { useGSAP } from '@gsap/react';
 import { GlobalContext, ContextProvider } from '@/context';
 import { PostProcessing } from '@/app/3D-scan/3D-scan-components/post-processing';
-import TEXTUREMAP from '@/app/3D-scan/3D-scan-assets/raw-1.png';
-import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/depth-1.png';
+import TEXTUREMAP from '@/app/3D-scan/3D-scan-assets/raw-4.png';
+import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/depth-5.png';
 import EDGEMAP from '@/app/3D-scan/3D-scan-assets/edge-2.png';
 
 // Font definition - currently unused but kept for potential future use

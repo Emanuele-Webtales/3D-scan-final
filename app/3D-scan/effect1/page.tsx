@@ -164,26 +164,17 @@ const Scene = ({
 			flow = oneMinus(smoothstep(0, 0.02, abs(depth.sub(uProgress))));
 			mask = dot.mul(flow).mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
 		} else {
-			// Sharp central line with smooth gradient extending outward
-			const depthValue = depth.r;
-			const lineCenter = uProgress;
-			const lineWidth = float(controls.lineWidth);
+			// Simple clean line mode
 			const gradientWidth = float(controls.gradientWidth);
 			
-			// Create a sharp central line
-			const coreWidth = lineWidth.div(8);
-			const coreMask = smoothstep(lineCenter.sub(coreWidth), lineCenter, depthValue)
-				.mul(smoothstep(lineCenter.add(coreWidth), lineCenter, depthValue));
+			// Simple distance calculation from depth to progress
+			const distanceFromProgress = abs(depth.r.sub(uProgress));
 			
-			// Create a smooth gradient that extends beyond the line width
-			const gradientMask = smoothstep(lineCenter.sub(gradientWidth), lineCenter, depthValue)
-				.mul(smoothstep(lineCenter.add(gradientWidth), lineCenter, depthValue));
+			// Create smooth line with gradient falloff
+			const lineMask = oneMinus(smoothstep(0, gradientWidth, distanceFromProgress));
 			
-			// Combine sharp core with smooth gradient
-			const combinedMask = coreMask.add(gradientMask.mul(0.3));
-			
-			// Apply with clean intensity
-			mask = combinedMask.mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
+			// Apply color
+			mask = lineMask.mul(vec3(...controls.scanColor));
 		}
 
 		// Blend the original texture with the scanning mask
@@ -342,12 +333,12 @@ const DebugPanel = ({
 								/>
 							</div>
 							<div>
-								<label className="block text-xs mb-1">Scan Intensity: {controls.scanIntensity.toFixed(1)}</label>
+								<label className="block text-xs mb-1">Scan Intensity: {controls.scanIntensity.toFixed(2)}</label>
 								<input
 									type="range"
-									min="1"
-									max="20"
-									step="0.5"
+									min="0"
+									max="5"
+									step="0.05"
 									value={controls.scanIntensity}
 									onChange={(e) => updateControl('scanIntensity', parseFloat(e.target.value))}
 									className="w-full"
@@ -582,7 +573,7 @@ const Html = () => {
 		// Scanning effect controls
 		scanStrength: 0.01,
 		scanColor: [3, 3, 3], // Very subtle white color for line mode
-		scanIntensity: 0.5,
+		scanIntensity: 0.4,
 		scanMode: 'line',
 		lineWidth: 0.005,
 		gradientWidth: 0.05,
@@ -590,7 +581,7 @@ const Html = () => {
 		// Tiling and pattern controls
 		tilingAmount: 120,
 		dotSize: 0.5,
-		noiseIntensity: 1,
+		noiseIntensity: 0.1,
 		
 		// Mouse control
 		mouseControlEnabled: true,
@@ -716,8 +707,8 @@ const Html = () => {
 		setTransitionComplete(false);
 		setIsTransitioning(false);
 		if (!controls.autoProgress && !controls.loopEnabled && !controls.hybridMode) {
-			setMouseY(0);
-			setProgress(0); // Reset to no scanning when mouse leaves
+			// setMouseY(0);
+			// setProgress(0); // Reset to no scanning when mouse leaves
 		} else if (controls.hybridMode) {
 			// In hybrid mode, smoothly transition back to auto progress
 			gsap.to({}, {

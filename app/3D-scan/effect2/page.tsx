@@ -89,7 +89,7 @@ const Scene = () => {
       value: 1,
       repeat: -1,
       duration: 19,
-      ease: 'power1.out',
+      ease: 'power3.in',
     });
   }, [uniforms.uProgress]);
 

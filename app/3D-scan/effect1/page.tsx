@@ -17,6 +17,11 @@
  * - A noise pattern for the scanning dots
  * - Mouse position to control scanning progress
  * - GSAP for smooth text animations
+ * 
+ * Combined Effects:
+ * - Effect1: Original dot/line scanning with mouse control
+ * - Effect2: Edge detection neon effect
+ * - Effect3: Cross pattern scanning effect
  */
 
 'use client';
@@ -32,10 +37,15 @@ import {
   abs,
   blendScreen,
   float,
+  Fn,
+  max,
   mod,
   mx_cell_noise_float,
   oneMinus,
+  select,
+  ShaderNodeObject,
   smoothstep,
+  sub,
   texture,
   uniform,
   uv,
@@ -49,14 +59,35 @@ import { GlobalContext, ContextProvider } from '@/context';
 import { PostProcessing } from '@/app/3D-scan/3D-scan-components/post-processing';
 import TEXTUREMAP from '@/app/3D-scan/3D-scan-assets/raw-1.png';
 import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/depth-1.png';
+import EDGEMAP from '@/app/3D-scan/3D-scan-assets/edge-2.png';
 
-const tomorrow = Tomorrow({
-	weight: '600',
-	subsets: ['latin'],
-});
+// Font definition - currently unused but kept for potential future use
+// const tomorrow = Tomorrow({
+// 	weight: '600',
+// 	subsets: ['latin'],
+// });
 
 const WIDTH = 1600;
 const HEIGHT = 900;
+
+// Custom cross pattern function from effect3
+const sdCross = Fn(
+  ([p_immutable, b_immutable, r_immutable]: ShaderNodeObject<THREE.Node>[]) => {
+    const r = float(r_immutable).toVar();
+    const b = vec2(b_immutable).toVar();
+    const p = vec2(p_immutable).toVar();
+    p.assign(abs(p));
+    p.assign(select(p.y.greaterThan(p.x), p.yx, p.xy));
+    const q = vec2(p.sub(b)).toVar();
+    const k = float(max(q.y, q.x)).toVar();
+    const w = vec2(
+      select(k.greaterThan(0.0), q, vec2(b.y.sub(p.x), k.negate()))
+    ).toVar();
+    const d = float(max(w, 0.0).length()).toVar();
+
+    return select(k.greaterThan(0.0), d, d.negate()).add(r);
+  }
+);
 
 // Debug controls interface - defines all the properties we can control
 interface DebugControls {
@@ -68,7 +99,7 @@ interface DebugControls {
 	scanStrength: number;
 	scanColor: [number, number, number];
 	scanIntensity: number;
-	scanMode: 'dots' | 'line';
+	scanMode: 'dots' | 'line' | 'edge' | 'cross';
 	lineWidth: number;
 	gradientWidth: number;
 	
@@ -76,6 +107,8 @@ interface DebugControls {
 	tilingAmount: number;
 	dotSize: number;
 	noiseIntensity: number;
+	crossSize: number;
+	crossThickness: number;
 	
 	// Mouse control
 	mouseControlEnabled: boolean;
@@ -103,7 +136,7 @@ const Scene = ({
 
 	// useTexture is a React Three Fiber hook that loads textures asynchronously
 	// It returns an array of textures and a callback when loading is complete
-	const [rawMap, depthMap] = useTexture([TEXTUREMAP.src, DEPTHMAP.src], () => {
+	const [rawMap, depthMap, edgeMap] = useTexture([TEXTUREMAP.src, DEPTHMAP.src, EDGEMAP.src], () => {
 		setIsLoading(false);
 		// Set the color space for proper color rendering
 		rawMap.colorSpace = THREE.SRGBColorSpace;
@@ -120,9 +153,9 @@ const Scene = ({
 		// Strength of the displacement effect - now controlled by debug panel
 		const strength = controls.scanStrength;
 
-		// Create a texture node from the depth map
-		// The depth map contains grayscale values representing depth information
+		// Create texture nodes from the maps
 		const tDepthMap = texture(depthMap);
+		const tEdgeMap = texture(edgeMap);
 
 		// Create the main texture with displacement based on depth
 		// uv() gives us the current pixel coordinates (0-1 range)
@@ -136,22 +169,6 @@ const Scene = ({
 		// Create UV coordinates that account for aspect ratio
 		const tUv = vec2(uv().x.mul(aspect), uv().y);
 
-		// Create a tiling pattern for the scanning effect - now controlled by debug panel
-		// This creates a grid of dots that will be used as the scanning mask
-		const tiling = vec2(controls.tilingAmount);
-		// Create tiled UV coordinates and center them (-1 to 1 range)
-		const tiledUv = mod(tUv.mul(tiling), 2.0).sub(1.0);
-
-		// Generate noise for brightness variation - now controlled by debug panel
-		// This creates a subtle texture in the scanning effect
-		const brightness = mx_cell_noise_float(tUv.mul(tiling).div(2)).mul(controls.noiseIntensity);
-
-		// Calculate distance from center of each tile
-		const dist = float(tiledUv.length());
-		// Create dots using smoothstep - creates smooth circular shapes
-		// dotSize controls the size of the scanning dots
-		const dot = float(smoothstep(controls.dotSize, controls.dotSize - 0.01, dist)).mul(brightness);
-
 		// Get the depth value for the current pixel
 		const depth = tDepthMap;
 
@@ -161,9 +178,25 @@ const Scene = ({
 		
 		if (controls.scanMode === 'dots') {
 			// Original dot-based scanning effect
+			// Create a tiling pattern for the scanning effect - now controlled by debug panel
+			// This creates a grid of dots that will be used as the scanning mask
+			const tiling = vec2(controls.tilingAmount);
+			// Create tiled UV coordinates and center them (-1 to 1 range)
+			const tiledUv = mod(tUv.mul(tiling), 2.0).sub(1.0);
+
+			// Generate noise for brightness variation - now controlled by debug panel
+			// This creates a subtle texture in the scanning effect
+			const brightness = mx_cell_noise_float(tUv.mul(tiling).div(2)).mul(controls.noiseIntensity);
+
+			// Calculate distance from center of each tile
+			const dist = float(tiledUv.length());
+			// Create dots using smoothstep - creates smooth circular shapes
+			// dotSize controls the size of the scanning dots
+			const dot = float(smoothstep(controls.dotSize, controls.dotSize - 0.01, dist)).mul(brightness);
+
 			flow = oneMinus(smoothstep(0, 0.02, abs(depth.sub(uProgress))));
 			mask = dot.mul(flow).mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
-		} else {
+		} else if (controls.scanMode === 'line') {
 			// Simple clean line mode
 			const gradientWidth = float(controls.gradientWidth);
 			
@@ -175,6 +208,22 @@ const Scene = ({
 			
 			// Apply color
 			mask = lineMask.mul(vec3(...controls.scanColor));
+		} else if (controls.scanMode === 'edge') {
+			// Edge detection mode from effect2
+			flow = sub(1, smoothstep(0, 0.02, abs(depth.sub(uProgress))));
+			mask = oneMinus(tEdgeMap).mul(flow).mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
+		} else if (controls.scanMode === 'cross') {
+			// Cross pattern mode from effect3
+			const tiling = vec2(controls.tilingAmount);
+			const tiledUv = mod(tUv.mul(tiling), 2.0).sub(1.0);
+
+			const crossParams = vec2(float(controls.crossSize), float(controls.crossThickness));
+			const dist = sdCross(tiledUv, crossParams, float(0.0));
+			const cross = vec3(smoothstep(0.0, 0.02, dist));
+
+			// Use regular depth instead of inverted depth to match other modes
+			flow = sub(1, smoothstep(0, 0.02, abs(depth.sub(uProgress))));
+			mask = oneMinus(cross).mul(flow).mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
 		}
 
 		// Blend the original texture with the scanning mask
@@ -194,7 +243,7 @@ const Scene = ({
 				uProgress,
 			},
 		};
-	}, [rawMap, depthMap, controls]); // Add controls to dependencies
+	}, [rawMap, depthMap, edgeMap, controls]); // Add edgeMap and controls to dependencies
 
 	// useAspect calculates the proper scale to maintain aspect ratio
 	// This ensures the effect looks correct on different screen sizes
@@ -285,11 +334,13 @@ const DebugPanel = ({
 								<label className="block text-xs mb-1">Scan Mode</label>
 								<select
 									value={controls.scanMode}
-									onChange={(e) => updateControl('scanMode', e.target.value as 'dots' | 'line')}
+									onChange={(e) => updateControl('scanMode', e.target.value as 'dots' | 'line' | 'edge' | 'cross')}
 									className="w-full bg-gray-700 text-white px-2 py-1 rounded text-xs"
 								>
 									<option value="dots">Dots Pattern</option>
 									<option value="line">Wide Line</option>
+									<option value="edge">Edge Detection</option>
+									<option value="cross">Cross Pattern</option>
 								</select>
 							</div>
 							{controls.scanMode === 'line' && (
@@ -315,6 +366,34 @@ const DebugPanel = ({
 											step="0.1"
 											value={controls.gradientWidth}
 											onChange={(e) => updateControl('gradientWidth', parseFloat(e.target.value))}
+											className="w-full"
+										/>
+									</div>
+								</>
+							)}
+							{controls.scanMode === 'cross' && (
+								<>
+									<div>
+										<label className="block text-xs mb-1">Cross Size: {controls.crossSize.toFixed(2)}</label>
+										<input
+											type="range"
+											min="0.1"
+											max="0.8"
+											step="0.01"
+											value={controls.crossSize}
+											onChange={(e) => updateControl('crossSize', parseFloat(e.target.value))}
+											className="w-full"
+										/>
+									</div>
+									<div>
+										<label className="block text-xs mb-1">Cross Thickness: {controls.crossThickness.toFixed(3)}</label>
+										<input
+											type="range"
+											min="0.01"
+											max="0.1"
+											step="0.001"
+											value={controls.crossThickness}
+											onChange={(e) => updateControl('crossThickness', parseFloat(e.target.value))}
 											className="w-full"
 										/>
 									</div>
@@ -560,7 +639,7 @@ const Html = () => {
 	const [transitionComplete, setTransitionComplete] = useState(false);
 	const [isTransitioning, setIsTransitioning] = useState(false);
 	const [transitionStartProgress, setTransitionStartProgress] = useState(0);
-	const [transitionTargetProgress, setTransitionTargetProgress] = useState(0);
+	const [transitionTargetProgress, setTransitionTargetProgress] = useState(0); // Used in hybrid mode calculations
 	const [transitionStartTime, setTransitionStartTime] = useState(0);
 	const containerRef = useRef<HTMLDivElement>(null);
 
@@ -582,6 +661,8 @@ const Html = () => {
 		tilingAmount: 120,
 		dotSize: 0.5,
 		noiseIntensity: 0.1,
+		crossSize: 0.3,
+		crossThickness: 0.02,
 		
 		// Mouse control
 		mouseControlEnabled: true,
@@ -601,7 +682,7 @@ const Html = () => {
 		if (!controls.autoProgress && !controls.hybridMode) return;
 
 		let animationId: number;
-		let startTime = Date.now();
+		const startTime = Date.now();
 
 		const animate = () => {
 			const elapsed = (Date.now() - startTime) / 1000;
@@ -665,10 +746,10 @@ const Html = () => {
 				// During transition, continuously update target and interpolate
 				setTransitionTargetProgress(clampedY);
 				const elapsed = (Date.now() - transitionStartTime) / 1000;
-				const transitionProgress = Math.min(elapsed / 0.4, 1);
+				const transitionProgress = Math.min(elapsed / 0.3, 1);
 		
 				// Apply ease-in-out easing
-				const easedProgress = transitionProgress < 0.4
+				const easedProgress = transitionProgress < 0.3
 					? 2 * transitionProgress * transitionProgress 
 					: 1 - Math.pow(-2 * transitionProgress + 2, 2) / 2;
 				
@@ -758,7 +839,7 @@ const Html = () => {
 			
 			{/* Main container with mouse tracking */}
 			<div 
-				className=" rounded-3xl overflow-hidden relative w-[40%] h-[40%]"
+				className=" rounded-3xl overflow-hidden relative w-[60%] h-[60%]"
 				ref={containerRef}
 				onMouseMove={handleMouseMove}
 				onMouseEnter={handleMouseEnter}
@@ -782,6 +863,7 @@ const Html = () => {
 						<div>Auto: {controls.autoProgress ? 'ON' : 'OFF'}</div>
 						<div>Hybrid: {controls.hybridMode ? 'ON' : 'OFF'}</div>
 						<div>Hover: {isHovering ? 'YES' : 'NO'}</div>
+						<div>Mode: {controls.scanMode}</div>
 					</div>
 				)}
 			</div>

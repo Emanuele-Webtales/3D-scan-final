@@ -70,6 +70,7 @@ interface DebugControls {
 	scanIntensity: number;
 	scanMode: 'dots' | 'line';
 	lineWidth: number;
+	gradientWidth: number;
 	
 	// Tiling and pattern controls
 	tilingAmount: number;
@@ -163,26 +164,26 @@ const Scene = ({
 			flow = oneMinus(smoothstep(0, 0.02, abs(depth.sub(uProgress))));
 			mask = dot.mul(flow).mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
 		} else {
-			// True continuous line scanning effect - no dots, no tiling
+			// Sharp central line with smooth gradient extending outward
 			const depthValue = depth.r;
 			const lineCenter = uProgress;
 			const lineWidth = float(controls.lineWidth);
+			const gradientWidth = float(controls.gradientWidth);
 			
-			// Create a clean, sharp line based purely on depth proximity
-			// This creates a continuous line without any dot pattern
-			const lineMask = smoothstep(lineCenter.sub(lineWidth), lineCenter, depthValue)
-				.mul(smoothstep(lineCenter.add(lineWidth), lineCenter, depthValue));
-			
-			// Create a very thin, sharp core for crispness
+			// Create a sharp central line
 			const coreWidth = lineWidth.div(8);
 			const coreMask = smoothstep(lineCenter.sub(coreWidth), lineCenter, depthValue)
 				.mul(smoothstep(lineCenter.add(coreWidth), lineCenter, depthValue));
 			
-			// Combine with minimal bloom for clean line
-			const combinedMask = coreMask.add(lineMask.mul(0.2));
+			// Create a smooth gradient that extends beyond the line width
+			const gradientMask = smoothstep(lineCenter.sub(gradientWidth), lineCenter, depthValue)
+				.mul(smoothstep(lineCenter.add(gradientWidth), lineCenter, depthValue));
 			
-			// Apply with reduced intensity for cleaner look
-			mask = combinedMask.mul(vec3(...controls.scanColor)).mul(controls.scanIntensity * 0.3);
+			// Combine sharp core with smooth gradient
+			const combinedMask = coreMask.add(gradientMask.mul(0.3));
+			
+			// Apply with clean intensity
+			mask = combinedMask.mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
 		}
 
 		// Blend the original texture with the scanning mask
@@ -243,7 +244,7 @@ const DebugPanel = ({
 		/**
 		 * The debug panel UI
 		 */
-		<div className="fixed top-4 left-4 bg-black/60 backdrop-blur-sm bg-opacity-80 text-white p-4 rounded-lg text-sm font-mono z-50 max-w-80">
+		<div className="fixed top-4 bottom-4 overflow-y-scroll left-4 bg-black/60 backdrop-blur-sm bg-opacity-80 text-white p-4 rounded-lg text-sm font-mono z-50 max-w-80">
 			{/* Header with collapse toggle */}
 			<div className="flex justify-between items-center mb-4">
 				<h3 className="font-bold text-lg">Debug Controls</h3>
@@ -301,18 +302,32 @@ const DebugPanel = ({
 								</select>
 							</div>
 							{controls.scanMode === 'line' && (
-								<div>
-									<label className="block text-xs mb-1">Line Width: {controls.lineWidth.toFixed(3)}</label>
-									<input
-										type="range"
-										min="0.005"
-										max="0.1"
-										step="0.001"
-										value={controls.lineWidth}
-										onChange={(e) => updateControl('lineWidth', parseFloat(e.target.value))}
-										className="w-full"
-									/>
-								</div>
+								<>
+									<div>
+										<label className="block text-xs mb-1">Line Width: {controls.lineWidth.toFixed(3)}</label>
+										<input
+											type="range"
+											min="0.005"
+											max="0.1"
+											step="0.001"
+											value={controls.lineWidth}
+											onChange={(e) => updateControl('lineWidth', parseFloat(e.target.value))}
+											className="w-full"
+										/>
+									</div>
+									<div>
+										<label className="block text-xs mb-1">Gradient Width: {controls.gradientWidth.toFixed(2)}</label>
+										<input
+											type="range"
+											min="0.1"
+											max="2.0"
+											step="0.1"
+											value={controls.gradientWidth}
+											onChange={(e) => updateControl('gradientWidth', parseFloat(e.target.value))}
+											className="w-full"
+										/>
+									</div>
+								</>
 							)}
 							<div>
 								<label className="block text-xs mb-1">Scan Strength: {controls.scanStrength.toFixed(3)}</label>
@@ -566,10 +581,11 @@ const Html = () => {
 		
 		// Scanning effect controls
 		scanStrength: 0.01,
-		scanColor: [5, 5, 5], // Subtle white color for line mode
-		scanIntensity: 3,
+		scanColor: [3, 3, 3], // Very subtle white color for line mode
+		scanIntensity: 0.5,
 		scanMode: 'line',
-		lineWidth: 0.01,
+		lineWidth: 0.005,
+		gradientWidth: 0.05,
 		
 		// Tiling and pattern controls
 		tilingAmount: 120,

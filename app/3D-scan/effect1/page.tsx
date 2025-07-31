@@ -78,6 +78,7 @@ interface DebugControls {
 	mouseControlEnabled: boolean;
 	autoProgress: boolean;
 	autoProgressSpeed: number;
+	hybridMode: boolean;
 	
 	// Visual controls
 	showDebugInfo: boolean;
@@ -215,6 +216,9 @@ const DebugPanel = ({
 	if (!controls.showControls) return null;
 
 	return (
+		/**
+		 * The debug panel UI
+		 */
 		<div className="fixed top-4 left-4 bg-black/60 backdrop-blur-sm bg-opacity-80 text-white p-4 rounded-lg text-sm font-mono z-50 max-w-80">
 			{/* Header with collapse toggle */}
 			<div className="flex justify-between items-center mb-4">
@@ -385,7 +389,16 @@ const DebugPanel = ({
 								/>
 								Auto Progress
 							</label>
-							{controls.autoProgress && (
+							<label className="flex items-center">
+								<input
+									type="checkbox"
+									checked={controls.hybridMode}
+									onChange={(e) => updateControl('hybridMode', e.target.checked)}
+									className="mr-2"
+								/>
+								Hybrid Mode (Auto + Cursor)
+							</label>
+							{(controls.autoProgress || controls.hybridMode) && (
 								<div>
 									<label className="block text-xs mb-1">Auto Progress Speed: {controls.autoProgressSpeed.toFixed(2)}</label>
 									<input
@@ -442,6 +455,8 @@ const Html = () => {
 	// progress: scanning progress (0-1, where 0 = no scan, 1 = full scan)
 	const [mouseY, setMouseY] = useState(0);
 	const [progress, setProgress] = useState(0);
+	const [isHovering, setIsHovering] = useState(false);
+	const [autoProgress, setAutoProgress] = useState(0);
 	const containerRef = useRef<HTMLDivElement>(null);
 
 	// Debug controls state
@@ -464,6 +479,7 @@ const Html = () => {
 		mouseControlEnabled: true,
 		autoProgress: false,
 		autoProgressSpeed: 0.5,
+		hybridMode: false,
 		
 		// Visual controls
 		showDebugInfo: true,
@@ -472,7 +488,7 @@ const Html = () => {
 
 	// Auto progress animation
 	useEffect(() => {
-		if (!controls.autoProgress) return;
+		if (!controls.autoProgress && !controls.hybridMode) return;
 
 		let animationId: number;
 		let startTime = Date.now();
@@ -480,7 +496,10 @@ const Html = () => {
 		const animate = () => {
 			const elapsed = (Date.now() - startTime) / 1000;
 			const newProgress = (elapsed * controls.autoProgressSpeed) % 1;
-			setProgress(newProgress);
+			setAutoProgress(newProgress);
+			if (!controls.hybridMode || !isHovering) {
+				setProgress(newProgress);
+			}
 			animationId = requestAnimationFrame(animate);
 		};
 
@@ -489,7 +508,7 @@ const Html = () => {
 		return () => {
 			if (animationId) cancelAnimationFrame(animationId);
 		};
-	}, [controls.autoProgress, controls.autoProgressSpeed]);
+	}, [controls.autoProgress, controls.autoProgressSpeed, controls.hybridMode, isHovering]);
 
 	// Loop animation
 	useEffect(() => {
@@ -514,7 +533,9 @@ const Html = () => {
 
 	// Handle mouse movement to control the scanning effect
 	const handleMouseMove = (e: React.MouseEvent) => {
-		if (!containerRef.current || !controls.mouseControlEnabled || controls.autoProgress || controls.loopEnabled) return;
+		if (!containerRef.current || !controls.mouseControlEnabled) return;
+		if (controls.autoProgress && !controls.hybridMode) return;
+		if (controls.loopEnabled && !controls.hybridMode) return;
 		
 		// Get the bounding rectangle of the container
 		const rect = containerRef.current.getBoundingClientRect();
@@ -528,16 +549,44 @@ const Html = () => {
 		
 		setMouseY(clampedY);
 		
-		// Invert the progress so that top = 0 (no scan) and bottom = 1 (full scan)
-		// This matches the expected behavior where scanning progresses from top to bottom
-		setProgress(clampedY);
+		// In hybrid mode, smoothly transition to cursor position
+		if (controls.hybridMode && isHovering) {
+			gsap.to({}, {
+				duration: 0.2,
+				onUpdate: function() {
+					const targetProgress = clampedY;
+					const currentProgress = progress;
+					setProgress(currentProgress + (targetProgress - currentProgress) * this.progress());
+				}
+			});
+		} else {
+			// Invert the progress so that top = 0 (no scan) and bottom = 1 (full scan)
+			// This matches the expected behavior where scanning progresses from top to bottom
+			setProgress(clampedY);
+		}
+	};
+
+	// Handle mouse entering the container
+	const handleMouseEnter = () => {
+		setIsHovering(true);
 	};
 
 	// Handle mouse leaving the container
 	const handleMouseLeave = () => {
-		if (!controls.autoProgress && !controls.loopEnabled) {
+		setIsHovering(false);
+		if (!controls.autoProgress && !controls.loopEnabled && !controls.hybridMode) {
 			setMouseY(0);
 			setProgress(0); // Reset to no scanning when mouse leaves
+		} else if (controls.hybridMode) {
+			// In hybrid mode, smoothly transition back to auto progress
+			gsap.to({}, {
+				duration: 0.2,
+				onUpdate: function() {
+					const targetProgress = autoProgress;
+					const currentProgress = progress;
+					setProgress(currentProgress + (targetProgress - currentProgress) * this.progress());
+				}
+			});
 		}
 	};
 
@@ -580,6 +629,7 @@ const Html = () => {
 				className="h-[50vh] rounded-3xl overflow-hidden relative w-[60%] h-[60%]"
 				ref={containerRef}
 				onMouseMove={handleMouseMove}
+				onMouseEnter={handleMouseEnter}
 				onMouseLeave={handleMouseLeave}
 			>
 		
@@ -598,6 +648,8 @@ const Html = () => {
 						<div>Mouse Y: {(mouseY * 100).toFixed(1)}%</div>
 						<div>Loop: {controls.loopEnabled ? 'ON' : 'OFF'}</div>
 						<div>Auto: {controls.autoProgress ? 'ON' : 'OFF'}</div>
+						<div>Hybrid: {controls.hybridMode ? 'ON' : 'OFF'}</div>
+						<div>Hover: {isHovering ? 'YES' : 'NO'}</div>
 					</div>
 				)}
 			</div>

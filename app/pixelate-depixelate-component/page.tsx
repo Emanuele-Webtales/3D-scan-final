@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from "react"
 import { motion, useMotionValue, useTransform } from "framer-motion"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
-// import { ComponentMessage } from "https://framer.com/m/Utils-FINc.js"
+import { ComponentMessage } from "https://framer.com/m/Utils-FINc.js"
 
 //Working version Lalala
 
@@ -18,9 +18,9 @@ function PixelateSvgFilter({
     crossLayers = false,
 }: PixelateSvgFilterProps) {
     return (
-        <svg>
+        <svg style={{ userSelect: "none" }}>
             <defs>
-                <filter id={id} x="0" y="0" width="1" height="1">
+                <filter id={id} x="-50%" y="-50%" width="200%" height="200%">
                     {"First layer: Normal pixelation effect"}
                     <feConvolveMatrix
                         kernelMatrix="1 1 1
@@ -53,6 +53,10 @@ function PixelateSvgFilter({
                         radius={size / 2}
                         result={"NORMAL"}
                     />
+                    <feOffset dx="0" dy="0" />
+                    <feMerge>
+                        <feMergeNode in="NORMAL" />
+                    </feMerge>
                     {crossLayers && (
                         <>
                             {"Second layer: Fallback with full-width tiling"}
@@ -135,6 +139,27 @@ function PixelateSvgFilter({
     )
 }
 
+// Mobile detection hook
+const useIsMobile = () => {
+    const [isMobile, setIsMobile] = useState(false)
+
+    useEffect(() => {
+        const checkIsMobile = () => {
+            // Check for touch capability and screen size
+            const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+            const isSmallScreen = window.innerWidth <= 810
+            setIsMobile(hasTouch || isSmallScreen)
+        }
+
+        checkIsMobile()
+        window.addEventListener('resize', checkIsMobile)
+        
+        return () => window.removeEventListener('resize', checkIsMobile)
+    }, [])
+
+    return isMobile
+}
+
 /**
  * @framerDisableUnlink
  * @framerSupportedLayoutWidth any-prefer-fixed
@@ -142,15 +167,15 @@ function PixelateSvgFilter({
  * @framerIntrinsicWidth 400
  * @framerIntrinsicHeight 300
  */
-export default function PixelateComponent(props:any) {
+export default function PixelateComponent(props: any) {
     const {
         image,
+        video,
+        useVideo,
         strength,
         pixelateMode,
         hoverArea,
         safeArea,
-        removeFilterAtMin,
-        debug,
         style,
     } = props
 
@@ -160,6 +185,24 @@ export default function PixelateComponent(props:any) {
     const [isHovering, setIsHovering] = useState(false)
 
     const isCanvas = RenderTarget.current() === RenderTarget.canvas
+    const isMobile = useIsMobile()
+
+    // Check if media is provided
+    const hasMedia = useVideo
+        ? video && (video.src || video)
+        : image && (image.src || image)
+
+    // Show ComponentMessage if no media is provided
+    if (!hasMedia) {
+        return (
+            <div style={{ width: "100%", height: "100%" }}>
+                <ComponentMessage
+                    title="Pixelate Component"
+                    subtitle={`Set up the component by adding ${useVideo ? "video" : "image"} to the component properties.`}
+                />
+            </div>
+        )
+    }
 
     // Calculate pixelation range based on strength
     const getPixelationRange = () => {
@@ -186,7 +229,7 @@ export default function PixelateComponent(props:any) {
 
     // Calculate distance from center and update pixelation
     const updatePixelation = useCallback(
-        (clientX:number, clientY:number) => {
+        (clientX: number, clientY: number) => {
             if (!containerRef.current) return
 
             const rect = containerRef.current.getBoundingClientRect()
@@ -241,27 +284,27 @@ export default function PixelateComponent(props:any) {
 
     // Handle mouse events with expanded hover area
     const handleMouseMove = useCallback(
-        (event:React.MouseEvent<HTMLDivElement>) => {
-            if (isCanvas) return
+        (event: React.MouseEvent<HTMLDivElement>) => {
+            if (isCanvas || isMobile) return
             updatePixelation(event.clientX, event.clientY)
         },
-        [isCanvas, updatePixelation]
+        [isCanvas, isMobile, updatePixelation]
     )
 
     const handleMouseEnter = useCallback(() => {
-        if (isCanvas) return
+        if (isCanvas || isMobile) return
         setIsHovering(true)
-    }, [isCanvas])
+    }, [isCanvas, isMobile])
 
     const handleMouseLeave = useCallback(() => {
-        if (isCanvas) return
+        if (isCanvas || isMobile) return
         setIsHovering(false)
         pixelationSize.set(getInitialPixelation())
-    }, [isCanvas, getInitialPixelation, pixelationSize])
+    }, [isCanvas, isMobile, getInitialPixelation, pixelationSize])
 
     // Global mouse tracking for expanded hover area
     useEffect(() => {
-        if (isCanvas || !containerRef.current) return
+        if (isCanvas || isMobile || !containerRef.current) return
 
         const handleGlobalMouseMove = (event: MouseEvent) => {
             if (!containerRef.current) return
@@ -307,6 +350,7 @@ export default function PixelateComponent(props:any) {
         }
     }, [
         isCanvas,
+        isMobile,
         hoverArea,
         isHovering,
         updatePixelation,
@@ -338,15 +382,16 @@ export default function PixelateComponent(props:any) {
                 width: "100%",
                 height: "100%",
                 overflow: "hidden",
-                cursor: "crosshair",
+                userSelect: "none",
+                userDrag: "none",
                 //border: "1px solid red",
             }}
             onMouseMove={handleMouseMove}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
         >
-            {/* SVG Filter - conditional rendering based on user preference */}
-            {(!removeFilterAtMin || smoothedPixelation.get() > 1) && (
+            {/* SVG Filter - only render on non-mobile when pixelation > 1 */}
+            {!isMobile && smoothedPixelation.get() > 1 && (
                 <PixelateSvgFilter
                     id="pixelate-filter"
                     size={smoothedPixelation.get()}
@@ -354,94 +399,137 @@ export default function PixelateComponent(props:any) {
                 />
             )}
 
-            {/* Image with conditional filter */}
-            <motion.img
-                src={image?.src || image}
-                alt={image?.alt || "Pixelated image"}
-                style={{
-                    position: "absolute",
-                    inset: -(props.strength / 100) * 48,
-                    width: `calc(100% + ${(props.strength / 100) * 92}px)`,
-                    height: `calc(100% + ${(props.strength / 100) * 92}px)`,
-                    objectFit: "cover",
-                    backgroundPosition: "center center",
-                    filter:
-                        isCanvas ||
-                        (removeFilterAtMin && smoothedPixelation.get() <= 1)
-                            ? "none"
-                            : "url(#pixelate-filter)",
-                    transition: "filter 0.1s ease-out",
-                }}
-            />
-
-            {/* Debug overlay (only when hovering) */}
-            {isHovering && debug && (
-                <div
+            {/* Base unfiltered media */}
+            {useVideo ? (
+                <motion.video
+                    src={video?.src || video}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
                     style={{
                         position: "absolute",
-                        top: "10px",
-                        left: "10px",
-                        background: "rgba(0,0,0,0.8)",
-                        color: "white",
-                        padding: "8px",
-                        borderRadius: "4px",
-                        fontSize: "12px",
-                        fontFamily: "monospace",
+                        inset: -(props.strength / 100) * 50,
+                        width: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                        height: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                        objectFit: "cover",
+                        backgroundPosition: "center center",
+                        zIndex: 1,
+                        
+                        userSelect: "none",
                     }}
-                >
-                    <div>
-                        Mouse: ({Math.round(mousePosition.x)},{" "}
-                        {Math.round(mousePosition.y)})
-                    </div>
-                    <div>
-                        Pixelation: {Math.round(smoothedPixelation.get())}px
-                    </div>
-                    <div>
-                        Distance:{" "}
-                        {Math.round(
-                            ((smoothedPixelation.get() - minPixelation) /
-                                (maxPixelation - minPixelation)) *
-                                100
-                        )}
-                        %
-                    </div>
-                    <div>
-                        Hover Radius:{" "}
-                        {Math.round(
-                            (Math.max(
-                                containerSize.width,
-                                containerSize.height
-                            ) /
-                                2) *
-                                (hoverArea / 100)
-                        )}
-                        px
-                    </div>
-                    <div>Hover Area: {hoverArea}%</div>
-                </div>
+                />
+            ) : (
+                <motion.img
+                    src={image?.src || image}
+                    alt={image?.alt || "Base image"}
+                    style={{
+                        position: "absolute",
+                        inset: -(props.strength / 100) * 50,
+                        width: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                        height: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                        objectFit: "cover",
+                        backgroundPosition: "center center",
+                        zIndex: 1,
+                       
+                        userSelect: "none",
+                    }}
+                />
             )}
+
+            {/* Filtered media with opacity transition - only on non-mobile */}
+            {!isMobile && useVideo ? (
+                <motion.video
+                    src={video?.src || video}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    style={{
+                        position: "absolute",
+                        inset: -(props.strength / 100) * 50,
+                        width: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                        height: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                        objectFit: "cover",
+                        backgroundPosition: "center center",
+                        filter: "url(#pixelate-filter)",
+                        zIndex: 2,
+                        userSelect: "none",
+                        opacity:
+                            isCanvas || smoothedPixelation.get() <= 1
+                                ? 0
+                                : Math.min(
+                                      1,
+                                      Math.max(
+                                          0,
+                                          (smoothedPixelation.get() - 1) / 8
+                                      )
+                                  ),
+                        transition: "opacity 0.1s ease-out",
+                    }}
+                />
+            ) : !isMobile ? (
+                <motion.img
+                    src={image?.src || image}
+                    alt={image?.alt || "Pixelated image"}
+                    style={{
+                        position: "absolute",
+                        inset: -(props.strength / 100) * 50,
+                        width: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                        height: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                        objectFit: "cover",
+                        backgroundPosition: "center center",
+                        filter: "url(#pixelate-filter)",
+                        zIndex: 2,
+                        userSelect: "none",
+                        opacity:
+                            isCanvas || smoothedPixelation.get() <= 1
+                                ? 0
+                                : Math.min(
+                                      1,
+                                      Math.max(
+                                          0,
+                                          (smoothedPixelation.get() - 1) / 8
+                                      )
+                                  ),
+                        transition: "opacity 0.1s ease-out",
+                    }}
+                />
+            ) : null}
         </motion.div>
     )
 }
 
 // Default props
 PixelateComponent.defaultProps = {
+    useVideo: false,
     strength: 50,
     pixelateMode: "pixelate",
     hoverArea: 100,
     safeArea: 10,
-    removeFilterAtMin: true,
-    image: {
-        src: "https://picsum.photos/400/300",
-        alt: "Sample image",
-    },
+    image: null,
+    video: null,
 }
 
 // Property controls
 addPropertyControls(PixelateComponent, {
+    useVideo: {
+        type: ControlType.Boolean,
+        title: "Use Video",
+        defaultValue: false,
+        enabledTitle: "Video",
+        disabledTitle: "Image",
+    },
     image: {
         type: ControlType.ResponsiveImage,
         title: "Image",
+        hidden: (props) => props.useVideo,
+    },
+    video: {
+        type: ControlType.File,
+        title: "Video",
+        allowedFileTypes: ["video/*"],
+        hidden: (props) => !props.useVideo,
     },
     strength: {
         type: ControlType.Number,
@@ -478,19 +566,9 @@ addPropertyControls(PixelateComponent, {
         step: 1,
         defaultValue: 10,
         unit: "%",
-    },
-    removeFilterAtMin: {
-        type: ControlType.Boolean,
-        title: "Remove Filter at Min",
-        defaultValue: true,
         description:
-            "When enabled, removes SVG filter at minimum pixelation for clean image. When disabled, keeps filter with lowest settings.",
-    },
-    debug: {
-        type: ControlType.Boolean,
-        title: "Debug panel",
-        defaultValue: true,
+            "More components at [Framer University](https://frameruni.link/cc).",
     },
 })
 
-PixelateComponent.displayName = "Pixelate Component"
+PixelateComponent.displayName = "Pixelate-Depixelate_Dev"

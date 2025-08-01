@@ -57,8 +57,8 @@ import * as THREE from 'three/webgpu';
 import { useGSAP } from '@gsap/react';
 import { GlobalContext, ContextProvider } from '@/context';
 import { PostProcessing } from '@/app/3D-scan/3D-scan-components/post-processing';
-import TEXTUREMAP from '@/app/3D-scan/3D-scan-assets/raw-4.png';
-import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/depth-5.png';
+import TEXTUREMAP from '@/app/3D-scan/3D-scan-assets/raw-1.png';
+import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/depth-1.png';
 import EDGEMAP from '@/app/3D-scan/3D-scan-assets/edge-2.png';
 
 // Font definition - currently unused but kept for potential future use
@@ -197,17 +197,28 @@ const Scene = ({
 			flow = oneMinus(smoothstep(0, 0.02, abs(depth.sub(uProgress))));
 			mask = dot.mul(flow).mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
 		} else if (controls.scanMode === 'line') {
-			// Simple clean line mode
+			// Simple clean line mode - create a single precise line
+			const lineWidth = float(controls.lineWidth);
 			const gradientWidth = float(controls.gradientWidth);
 			
-			// Simple distance calculation from depth to progress
-			const distanceFromProgress = abs(depth.r.sub(uProgress));
+			// Use a very tight threshold for the exact progress line
+			const exactProgress = abs(depth.r.sub(uProgress));
 			
-			// Create smooth line with gradient falloff
-			const lineMask = oneMinus(smoothstep(0, gradientWidth, distanceFromProgress));
+			// Create a single sharp line at the exact progress position
+			// Use a very small threshold to ensure only one line appears
+			const sharpLine = select(exactProgress.lessThanEqual(lineWidth), 1.0, 0.0);
 			
-			// Apply color
-			mask = lineMask.mul(vec3(...controls.scanColor));
+			// Only add gradient if gradient width is greater than 0
+			// Scale down the gradient width to make it much more subtle
+			const scaledGradientWidth = gradientWidth.mul(0.1); // Make gradient 10x more subtle
+			const lineMask = select(
+				gradientWidth.greaterThan(0.0),
+				oneMinus(smoothstep(lineWidth, lineWidth.add(scaledGradientWidth), exactProgress)),
+				sharpLine
+			);
+			
+			// Apply color and intensity
+			mask = lineMask.mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
 		} else if (controls.scanMode === 'edge') {
 			// Edge detection mode from effect2
 			flow = sub(1, smoothstep(0, 0.02, abs(depth.sub(uProgress))));
@@ -228,6 +239,7 @@ const Scene = ({
 
 		// Blend the original texture with the scanning mask
 		// blendScreen creates a bright overlay effect
+		//@ts-ignore
 		const final = blendScreen(tMap, mask);
 
 		// Create the material that will render our effect
@@ -654,8 +666,8 @@ const Html = () => {
 		scanColor: [3, 3, 3], // Very subtle white color for line mode
 		scanIntensity: 0.4,
 		scanMode: 'line',
-		lineWidth: 0.005,
-		gradientWidth: 0.05,
+		lineWidth: 0.001, // Much smaller for precision
+		gradientWidth: 0.0, // Start with no gradient for sharp line
 		
 		// Tiling and pattern controls
 		tilingAmount: 120,

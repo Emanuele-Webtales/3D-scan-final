@@ -58,7 +58,7 @@ import { useGSAP } from '@gsap/react';
 import { GlobalContext, ContextProvider } from '@/context';
 import { PostProcessing } from '@/app/3D-scan/3D-scan-components/post-processing';
 import TEXTUREMAP from '@/app/3D-scan/3D-scan-assets/raw-1.png';
-import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/elephant.png';
+import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/depth-1.png';
 
 // Font definition - currently unused but kept for potential future use
 // const tomorrow = Tomorrow({
@@ -66,7 +66,7 @@ import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/elephant.png';
 // 	subsets: ['latin'],
 // });
 
-const WIDTH = 1600;
+const WIDTH = 1600 ;
 const HEIGHT = 900;
 
 // Custom cross pattern function from effect3
@@ -424,53 +424,53 @@ const DebugPanel = ({
 										onChange={(e) => updateControl('gradientWidth', parseFloat(e.target.value))}
 										className="w-full"
 									/>
-								</div>
+						</div>
 							)}
 
 							{controls.scanType !== 'gradient' && (
-								<div>
-									<label className="block text-xs mb-1">Tiling Amount: {controls.tilingAmount.toFixed(0)}</label>
-									<input
-										type="range"
-										min="10"
-										max="200"
-										step="5"
-										value={controls.tilingAmount}
-										onChange={(e) => updateControl('tilingAmount', parseFloat(e.target.value))}
-										className="w-full"
-									/>
-								</div>
+							<div>
+								<label className="block text-xs mb-1">Tiling Amount: {controls.tilingAmount.toFixed(0)}</label>
+								<input
+									type="range"
+									min="10"
+									max="200"
+									step="5"
+									value={controls.tilingAmount}
+									onChange={(e) => updateControl('tilingAmount', parseFloat(e.target.value))}
+									className="w-full"
+								/>
+							</div>
 							)}
 
 							{controls.scanType === 'dots' && (
-								<div>
-									<label className="block text-xs mb-1">Dot Size: {controls.dotSize.toFixed(3)}</label>
-									<input
-										type="range"
-										min="0.1"
-										max="0.9"
-										step="0.01"
-										value={controls.dotSize}
-										onChange={(e) => updateControl('dotSize', parseFloat(e.target.value))}
-										className="w-full"
-									/>
-								</div>
+							<div>
+								<label className="block text-xs mb-1">Dot Size: {controls.dotSize.toFixed(3)}</label>
+								<input
+									type="range"
+									min="0.1"
+									max="0.9"
+									step="0.01"
+									value={controls.dotSize}
+									onChange={(e) => updateControl('dotSize', parseFloat(e.target.value))}
+									className="w-full"
+								/>
+							</div>
 							)}
 
 							{controls.scanType === 'cross' && (
 								<>
-									<div>
+							<div>
 										<label className="block text-xs mb-1">Cross Size: {controls.crossSize.toFixed(2)}</label>
-										<input
-											type="range"
+								<input
+									type="range"
 											min="0.1"
 											max="0.8"
 											step="0.01"
 											value={controls.crossSize}
 											onChange={(e) => updateControl('crossSize', parseFloat(e.target.value))}
-											className="w-full"
-										/>
-									</div>
+									className="w-full"
+								/>
+							</div>
 									<div>
 										<label className="block text-xs mb-1">Cross Thickness: {controls.crossThickness.toFixed(3)}</label>
 										<input
@@ -552,11 +552,11 @@ const DebugPanel = ({
 									</div>
 									<div>
 										<label className="block text-xs mb-1">Loop Duration: {controls.loopDuration}s</label>
-										<input
-											type="range"
+											<input
+												type="range"
 											min="0.5"
 											max="10"
-											step="0.1"
+												step="0.1"
 											value={controls.loopDuration}
 											onChange={(e) => updateControl('loopDuration', parseFloat(e.target.value))}
 											className="w-full"
@@ -564,14 +564,14 @@ const DebugPanel = ({
 									</div>
 									<div>
 										<label className="block text-xs mb-1">Loop Easing</label>
-										<input
+											<input
 											type="text"
 											value={controls.loopEasing}
 											onChange={(e) => updateControl('loopEasing', e.target.value)}
 											placeholder="e.g. power2.inOut, elastic.out"
 											className="w-full bg-gray-700 text-white px-2 py-1 rounded text-xs"
-										/>
-									</div>
+											/>
+										</div>
 								</>
 							)}
 						</div>
@@ -598,6 +598,7 @@ const Html = () => {
 	const [transitionStartProgress, setTransitionStartProgress] = useState(0);
 	const [transitionStartTime, setTransitionStartTime] = useState(0);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const timelineRef = useRef<gsap.core.Timeline | null>(null);
 
 	// Debug controls state
 	const [controls, setControls] = useState<DebugControls>({
@@ -631,7 +632,18 @@ const Html = () => {
 
 	// Loop animation
 	useEffect(() => {
-		if (!controls.loopEnabled) return;
+		if (!controls.loopEnabled) {
+			if (timelineRef.current) {
+				timelineRef.current.kill();
+				timelineRef.current = null;
+			}
+			return;
+		}
+
+		// Kill existing timeline if it exists
+		if (timelineRef.current) {
+			timelineRef.current.kill();
+		}
 
 		const timeline = gsap.timeline({
 			repeat: controls.loopType === 'repeat' ? -1 : (controls.loopType === 'oneShot' ? 0 : -1),
@@ -645,17 +657,33 @@ const Html = () => {
 				const currentLoopProgress = this.progress();
 				setLoopProgress(currentLoopProgress);
 				
-				// Only set the main progress if not hovering or not transitioning
-				if (!isHovering && !isTransitioning) {
+				// Only set the main progress if not hovering
+				if (!isHovering) {
 					setProgress(currentLoopProgress);
 				}
 			}
 		});
 
+		// Store the timeline in ref for pause/resume control
+		timelineRef.current = timeline;
+
 		return () => {
-			timeline.kill();
+			if (timelineRef.current) {
+				timelineRef.current.kill();
+				timelineRef.current = null;
+			}
 		};
-	}, [controls.loopEnabled, controls.loopDuration, controls.loopType, controls.loopEasing, isHovering, isTransitioning]);
+	}, [controls.loopEnabled, controls.loopDuration, controls.loopType, controls.loopEasing]);
+
+	// Handle hover state changes for timeline control
+	useEffect(() => {
+		if (!controls.loopEnabled || !timelineRef.current) return;
+		
+		if (isHovering && controls.hoverEnabled && !isMobile) {
+			timelineRef.current.pause();
+		}
+		// Don't auto-resume here - let handleMouseLeave handle it
+	}, [isHovering, controls.hoverEnabled, controls.loopEnabled, isMobile]);
 
 	// Handle mouse movement to control the scanning effect
 	const handleMouseMove = (e: React.MouseEvent) => {
@@ -708,9 +736,9 @@ const Html = () => {
 		setMouseY(clampedProgress);
 		
 		// Handle smooth transition during hover
-		if (controls.loopEnabled && isHovering) {
-			if (isTransitioning) {
-				// During transition, continuously update target and interpolate
+		if (isHovering) {
+			if (controls.loopEnabled && isTransitioning) {
+				// During transition from loop to hover, continuously update target and interpolate
 				const elapsed = (Date.now() - transitionStartTime) / 1000;
 				const transitionProgress = Math.min(elapsed / 0.3, 1);
 		
@@ -728,13 +756,13 @@ const Html = () => {
 					setIsTransitioning(false);
 					setTransitionComplete(true);
 				}
-			} else if (transitionComplete) {
-				// After transition, follow cursor instantly
+			} else if (controls.loopEnabled && transitionComplete) {
+				// After transition from loop, follow cursor instantly
+				setProgress(clampedProgress);
+			} else if (!controls.loopEnabled) {
+				// No loop active - direct cursor following
 				setProgress(clampedProgress);
 			}
-		} else {
-			// No loop active or not in transition mode - follow cursor directly
-			setProgress(clampedProgress);
 		}
 	};
 
@@ -759,19 +787,15 @@ const Html = () => {
 		setTransitionComplete(false);
 		setIsTransitioning(false);
 		
-		if (controls.loopEnabled) {
-			// Smoothly transition back to loop progress
-			gsap.to({}, {
-				duration: 0.3,
-				ease: "power2.out",
-				onUpdate: function() {
-					const targetProgress = loopProgress;
-					const currentProgress = progress;
-					setProgress(currentProgress + (targetProgress - currentProgress) * this.progress());
-				}
-			});
+		if (controls.loopEnabled && timelineRef.current) {
+			// Set the timeline to continue from the current hover position
+			timelineRef.current.progress(progress);
+			// Update loop progress to match
+			setLoopProgress(progress);
+			// Resume the timeline
+			timelineRef.current.resume();
 		} else {
-			// Reset to no scanning when mouse leaves (no loop active)
+			// Reset to no scanning when mouse leaves (if no loop active)
 			setProgress(0);
 		}
 	};
@@ -835,6 +859,9 @@ const Html = () => {
 						<div>Mouse Y: {(mouseY * 100).toFixed(1)}%</div>
 						<div>Loop: {controls.loopEnabled ? 'ON' : 'OFF'}</div>
 						<div>Hover: {controls.hoverEnabled && !isMobile ? (isHovering ? 'ACTIVE' : 'ON') : 'OFF'}</div>
+						{controls.loopEnabled && timelineRef.current && (
+							<div>Timeline: {timelineRef.current.paused() ? 'PAUSED' : 'PLAYING'}</div>
+						)}
 						<div>Transitioning: {isTransitioning ? 'YES' : 'NO'}</div>
 						<div>Mobile: {isMobile ? 'YES' : 'NO'}</div>
 						<div>Type: {controls.scanType}</div>

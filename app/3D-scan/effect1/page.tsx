@@ -205,28 +205,51 @@ const Scene = ({
 			const dot = float(smoothstep(controls.dotSize, controls.dotSize - 0.01, dist)).mul(brightness);
 
 			flow = oneMinus(smoothstep(0, 0.02, abs(depth.sub(uProgress))));
-			mask = dot.mul(flow).mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
+			// Apply color and intensity (reduced impact for dots mode)
+			const dotsIntensity = controls.scanIntensity * 0.5;
+			mask = dot.mul(flow).mul(vec3(...controls.scanColor)).mul(dotsIntensity);
 		} else if (controls.scanType === 'gradient') {
-			// Gradient line mode - create a single precise line
-			const lineWidth = float(0.001); // Fixed line width for now - TODO: Make configurable
+			// Gradient line mode - central band at full opacity, linear falloff to 0.05
 			const gradientWidth = float(controls.gradientWidth);
 			
-			// Use a very tight threshold for the exact progress line
+			// Use depth map to determine which band we're in
 			const exactProgress = abs(depth.r.sub(uProgress));
 			
-			// Create a single sharp line at the exact progress position
-			const sharpLine = select(exactProgress.lessThanEqual(lineWidth), 1.0, 0.0);
+			// Scale the gradient width to be less sensitive
+			// The depth map values are very small, so we need to scale the gradient width accordingly
+			const scaledGradientWidth = gradientWidth.mul(0.1); // Scale down by 100x
 			
-			// Only add gradient if gradient width is greater than 0
-			const scaledGradientWidth = gradientWidth.mul(0.1); // Make gradient more subtle
-			const lineMask = select(
-				gradientWidth.greaterThan(0.0),
-				oneMinus(smoothstep(lineWidth, lineWidth.add(scaledGradientWidth), exactProgress)),
-				sharpLine
+			// Opacity pattern:
+			// - Current progress band (exactProgress = 0): opacity = 1.0
+			// - Bands within gradientWidth range: linear interpolation from 1.0 to 0.05
+			// - Bands outside gradientWidth range: opacity = 0.0
+			
+			// Check if we're at the current progress band
+			const isCurrentBand = exactProgress.lessThanEqual(0.001);
+			
+			// Check if we're within the gradient width range
+			const isWithinGradientRange = exactProgress.lessThanEqual(scaledGradientWidth);
+			
+			// Calculate linear interpolation for bands within range
+			// exactProgress goes from 0 to scaledGradientWidth
+			// We want opacity to go from 1.0 to 0.05
+			const normalizedDistance = exactProgress.div(scaledGradientWidth);
+			const interpolatedOpacity = oneMinus(normalizedDistance).mul(0.95).add(0.05);
+			
+			// Set opacity: 1.0 for current band, interpolated for bands within range, 0.0 for others
+			const opacity = select(
+				isCurrentBand,
+				1.0, // Current band
+				select(
+					isWithinGradientRange,
+					interpolatedOpacity, // Linear interpolation from 1.0 to 0.05
+					0.0  // Bands outside gradient width
+				)
 			);
 			
-			// Apply color and intensity
-			mask = lineMask.mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
+			// Apply color and intensity (reduced impact for gradient mode)
+			const reducedIntensity = controls.scanIntensity * 0.04;
+			mask = opacity.mul(vec3(...controls.scanColor)).mul(reducedIntensity);
 		} else if (controls.scanType === 'cross') {
 			// Cross pattern mode
 			const tiling = vec2(controls.tilingAmount);
@@ -237,7 +260,9 @@ const Scene = ({
 			const cross = vec3(smoothstep(0.0, 0.02, dist));
 
 			flow = sub(1, smoothstep(0, 0.02, abs(depth.sub(uProgress))));
-			mask = oneMinus(cross).mul(flow).mul(vec3(...controls.scanColor)).mul(controls.scanIntensity);
+			// Apply color and intensity (further reduced impact for cross mode)
+			const crossIntensity = controls.scanIntensity * 0.1;
+			mask = oneMinus(cross).mul(flow).mul(vec3(...controls.scanColor)).mul(crossIntensity);
 		}
 
 		// Blend the original texture with the scanning mask
@@ -418,7 +443,7 @@ const DebugPanel = ({
 									<input
 										type="range"
 										min="0"
-										max="2.0"
+										max="5.0"
 										step="0.1"
 										value={controls.gradientWidth}
 										onChange={(e) => updateControl('gradientWidth', parseFloat(e.target.value))}

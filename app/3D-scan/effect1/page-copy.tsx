@@ -24,7 +24,7 @@
  * - Effect3: Cross pattern scanning effect
  */
 
-import React, { useMemo, useState, useRef, useEffect, Component } from "react"
+import React, { useMemo, useState, useRef, useEffect } from "react"
 import { motion, useAnimation, useMotionValue } from "framer-motion"
 import { addPropertyControls, ControlType } from "framer"
 
@@ -113,8 +113,11 @@ import {
 } from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/three-tsl-bundle/dist/bundle.js"
 
 //-----------------------------------
-//
+// Register Three.js objects as JSX elements
 //-----------------------------------
+
+// Extend THREE with all objects for JSX usage
+extend(THREE as any)
 
 /**
  * @framerSupportedLayoutWidth any-prefer-fixed
@@ -124,83 +127,16 @@ import {
  * @framerDisableUnlink
  */
 
-// Error Boundary for catching R3F errors
-class ErrorBoundary extends Component<
-    { children: React.ReactNode; fallback?: React.ReactNode },
-    { hasError: boolean; error?: Error }
-> {
-    constructor(props: any) {
-        super(props)
-        this.state = { hasError: false }
-    }
-
-    static getDerivedStateFromError(error: Error) {
-        return { hasError: true, error }
-    }
-
-    componentDidCatch(error: Error, errorInfo: any) {
-        console.error('Three.js Error Boundary caught an error:', error, errorInfo)
-    }
-
-    render() {
-        if (this.state.hasError) {
-            return this.props.fallback || (
-                <div style={{
-                    width: '100%',
-                    height: '100%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: '#1a1a1a',
-                    color: 'white',
-                    fontSize: '14px'
-                }}>
-                    WebGL Error - Check Console
-                </div>
-            )
-        }
-
-        return this.props.children
-    }
-}
-
-// Minimal inline context for loading state (like the working version)
-const LoadingContext = React.createContext<{
-    isLoading: boolean
-    setIsLoading: (loading: boolean) => void
-}>({
-    isLoading: true,
-    setIsLoading: () => {}
-})
-
 export default function ThreeDScanEffect(props: {
     textureMap?: any
     depthMap?: any
     style?: React.CSSProperties
 }) {
     const { textureMap, depthMap, style } = props
-    const [isLoading, setIsLoading] = useState(true)
 
     // Convert Framer image objects to URLs for Three.js
-    // Use more reliable fallback images
-    const textureMapUrl = textureMap?.src || textureMap || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzMzNzNkYyIvPjx0ZXh0IHg9IjUwIiB5PSI1NSIgZm9udC1zaXplPSIxNiIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkltYWdlPC90ZXh0Pjwvc3ZnPg=='
-    const depthMapUrl = depthMap?.src || depthMap || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzY2NjY2NiIvPjx0ZXh0IHg9IjUwIiB5PSI1NSIgZm9udC1zaXplPSIxNiIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkRlcHRoPC90ZXh0Pjwvc3ZnPg=='
-    
-    // Debug logging for Framer
-    console.log('🔍 Texture URLs:', { textureMapUrl, depthMapUrl })
-    console.log('🔍 Loading state:', isLoading)
-
-    // Force loading to false after a timeout as fallback
-    useEffect(() => {
-        if (isLoading) {
-            const timeout = setTimeout(() => {
-                console.log('⏰ Main timeout - forcing loading complete')
-                setIsLoading(false)
-            }, 3000) // 3 second main timeout
-
-            return () => clearTimeout(timeout)
-        }
-    }, [isLoading, setIsLoading])
+    const textureMapUrl = textureMap?.src || textureMap
+    const depthMapUrl = depthMap?.src || depthMap
     const WIDTH = 1600
     const HEIGHT = 900
 
@@ -279,19 +215,16 @@ export default function ThreeDScanEffect(props: {
         return isMobile
     }
 
-    // Ultra-simplified Canvas component for maximum Framer compatibility
-    const SafeCanvas = (props: any) => {
+    // Inline WebGPUCanvas component
+    const WebGPUCanvas = (props: any) => {
         return (
             <Canvas
                 {...props}
                 flat
-                camera={{ position: [0, 0, 1] }}
-                onCreated={(state: any) => {
-                    console.log('✅ Canvas created successfully')
-                    // Don't access gl.getParameter - can cause issues in some environments
-                }}
-                onError={(error: any) => {
-                    console.error('❌ Canvas error:', error)
+                gl={async (glProps: any) => {
+                    const renderer = new THREE.WebGPURenderer(glProps as any)
+                    await renderer.init()
+                    return renderer
                 }}
             >
                 {props.children}
@@ -299,7 +232,7 @@ export default function ThreeDScanEffect(props: {
         )
     }
 
-    // Inline PostProcessing component with error handling
+    // Inline PostProcessing component
     const PostProcessing = ({
         strength = 1,
         threshold = 1,
@@ -310,521 +243,259 @@ export default function ThreeDScanEffect(props: {
         const { gl, scene, camera } = useThree()
 
         const render = useMemo(() => {
-            try {
-                console.log('Initializing PostProcessing...')
-                const postProcessing = new THREE.PostProcessing(gl as any)
-                const scenePass = pass(scene, camera)
-                const scenePassColor = scenePass.getTextureNode("output")
-                const bloomPass = bloom(scenePassColor, strength, 0.5, threshold)
+            const postProcessing = new THREE.PostProcessing(gl as any)
+            const scenePass = pass(scene, camera)
+            const scenePassColor = scenePass.getTextureNode("output")
+            const bloomPass = bloom(scenePassColor, strength, 0.5, threshold)
 
-                const final = scenePassColor.add(bloomPass)
+            const final = scenePassColor.add(bloomPass)
 
-                postProcessing.outputNode = final
-                console.log('PostProcessing initialized successfully')
-                return postProcessing
-            } catch (error) {
-                console.warn('PostProcessing failed to initialize:', error)
-                return null
-            }
+            postProcessing.outputNode = final
+
+            return postProcessing
         }, [camera, gl, scene, strength, threshold])
 
         useFrame(() => {
-            try {
-                if (render && typeof render.renderAsync === 'function') {
-                    render.renderAsync()
-                }
-            } catch (error) {
-                console.warn('PostProcessing render error:', error)
-            }
+            render.renderAsync()
         }, 1)
 
         return null
     }
 
-    // Real 3D scanning effect - recreates the depth-based scanning from the original
-    const ScanningScene = React.memo(({
+    // Scene component that renders the 3D scanning effect
+    // This component handles the Three.js material creation and uniform updates
+    const SceneContent = ({
         progress,
         controls,
     }: {
         progress: number
         controls: DebugControls
     }) => {
-        const { setIsLoading } = React.useContext(LoadingContext)
-        const meshRef = useRef<THREE.Mesh>(null)
-        const scanOverlayRef = useRef<THREE.Mesh>(null)
-        const [mainTexture, setMainTexture] = useState<THREE.Texture | null>(null)
-        const [depthTexture, setDepthTexture] = useState<THREE.Texture | null>(null)
-        
-        // Calculate aspect ratio manually (no useAspect hook)
-        const aspectRatio = WIDTH / HEIGHT
-        const scale = [aspectRatio, 1, 1] as [number, number, number]
-        
-        // Load both main texture and depth map
+        const [isLoading, setIsLoading] = useState(true)
+        const [rawMap, setRawMap] = useState<any>(null)
+        const [depthMap, setDepthMap] = useState<any>(null)
+
+        // Manual texture loading to avoid useTexture hook issues
         useEffect(() => {
             const loader = new THREE.TextureLoader()
             let loadedCount = 0
             
-            console.log('🚀 Loading textures for depth-based scanning...')
-            
-            // Load main texture
             if (textureMapUrl) {
-                loader.load(
-                    textureMapUrl,
-                    (texture: THREE.Texture) => {
-                        console.log('✅ Main texture loaded')
-                        texture.colorSpace = THREE.SRGBColorSpace
-                        setMainTexture(texture)
-                        loadedCount++
-                        if (loadedCount === 2) setIsLoading(false)
-                    },
-                    undefined,
-                    (error: ErrorEvent) => {
-                        console.error('❌ Main texture failed:', error)
-                        loadedCount++
-                        if (loadedCount === 2) setIsLoading(false)
-                    }
-                )
+                loader.load(textureMapUrl, (texture: any) => {
+                    texture.colorSpace = THREE.SRGBColorSpace
+                    setRawMap(texture)
+                    loadedCount++
+                    if (loadedCount === 2) setIsLoading(false)
+                })
             }
             
-            // Load depth map
             if (depthMapUrl) {
-                loader.load(
-                    depthMapUrl,
-                    (texture: THREE.Texture) => {
-                        console.log('✅ Depth map loaded')
-                        setDepthTexture(texture)
-                        loadedCount++
-                        if (loadedCount === 2) setIsLoading(false)
-                    },
-                    undefined,
-                    (error: ErrorEvent) => {
-                        console.error('❌ Depth map failed:', error)
-                        loadedCount++
-                        if (loadedCount === 2) setIsLoading(false)
-                    }
+                loader.load(depthMapUrl, (texture: any) => {
+                    setDepthMap(texture)
+                    loadedCount++
+                    if (loadedCount === 2) setIsLoading(false)
+                })
+            }
+        }, [])
+
+        // Safety check for Framer environment
+        try {
+
+            // Return early if textures aren't loaded yet
+            if (!rawMap || !depthMap) {
+                return (
+                    <mesh>
+                        <planeGeometry />
+                        <meshBasicMaterial color="black" />
+                    </mesh>
                 )
             }
-            
-            // Timeout fallback
-            setTimeout(() => {
-                if (loadedCount < 2) {
-                    console.log('⏰ Texture loading timeout')
-                    setIsLoading(false)
+
+            // useMemo is used to create the material and uniforms only when dependencies change
+            // This is important for performance in Three.js applications
+            const { material, uniforms } = useMemo(() => {
+                // Create uniforms - these are values that can be updated from JavaScript
+                // and passed to the shader (GPU code)
+                const uPointer = uniform(new THREE.Vector2(0)) // Mouse position
+                const uProgress = uniform(0) // Scanning progress (0 to 1)
+
+                // Strength of the displacement effect - fixed for now
+                const strength = 0.01 // TODO: Make this configurable in UI
+
+                // Create texture nodes from the maps
+                const tDepthMap = texture(depthMap)
+
+                // Create the main texture with displacement based on depth
+                // uv() gives us the current pixel coordinates (0-1 range)
+                // We add a displacement based on the depth map and mouse position
+                const tMap = !controls.showImage
+                    ? vec3(0, 0, 0) // Black background when images are hidden
+                    : texture(
+                          rawMap,
+                          uv().add(tDepthMap.r.mul(uPointer).mul(strength))
+                      )
+
+                // Calculate aspect ratio to maintain proper proportions
+                const aspect = float(WIDTH).div(HEIGHT)
+                // Create UV coordinates that account for aspect ratio
+                const tUv = vec2(uv().x.mul(aspect), uv().y)
+
+                // Get the depth value for the current pixel
+                const depth = tDepthMap
+
+                // Create the scanning flow effect based on mode
+                let flow
+                let mask
+
+                if (controls.scanType === "dots") {
+                    // Dot-based scanning effect
+                    const tiling = vec2(controls.tilingAmount)
+                    const tiledUv = mod(tUv.mul(tiling), 2.0).sub(1.0)
+
+                    // Generate noise for brightness variation
+                    const brightness = mx_cell_noise_float(
+                        tUv.mul(tiling).div(2)
+                    ).mul(0.1) // Fixed noise intensity
+
+                    // Calculate distance from center of each tile
+                    const dist = float(tiledUv.length())
+                    // Create dots using smoothstep - creates smooth circular shapes
+                    const dot = float(
+                        smoothstep(
+                            controls.dotSize,
+                            controls.dotSize - 0.01,
+                            dist
+                        )
+                    ).mul(brightness)
+
+                    flow = oneMinus(
+                        smoothstep(0, 0.02, abs(depth.sub(uProgress)))
+                    )
+                    // Apply color and intensity (reduced impact for dots mode)
+                    const dotsIntensity = controls.scanIntensity * 0.5
+                    mask = dot
+                        .mul(flow)
+                        .mul(vec3(...controls.scanColor))
+                        .mul(dotsIntensity)
+                } else if (controls.scanType === "gradient") {
+                    // Gradient line mode - central band at full opacity, linear falloff to 0.05
+                    const gradientWidth = float(controls.gradientWidth)
+
+                    // Use depth map to determine which band we're in
+                    const exactProgress = abs(depth.r.sub(uProgress))
+
+                    // Scale the gradient width to be less sensitive
+                    // The depth map values are very small, so we need to scale the gradient width accordingly
+                    const scaledGradientWidth = gradientWidth.mul(0.1) // Scale down by 100x
+
+                    // Opacity pattern:
+                    // - Current progress band (exactProgress = 0): opacity = 1.0
+                    // - Bands within gradientWidth range: linear interpolation from 1.0 to 0.05
+                    // - Bands outside gradientWidth range: opacity = 0.0
+
+                    // Check if we're at the current progress band
+                    const isCurrentBand = exactProgress.lessThanEqual(0.001)
+
+                    // Check if we're within the gradient width range
+                    const isWithinGradientRange =
+                        exactProgress.lessThanEqual(scaledGradientWidth)
+
+                    // Calculate linear interpolation for bands within range
+                    // exactProgress goes from 0 to scaledGradientWidth
+                    // We want opacity to go from 1.0 to 0.05
+                    const normalizedDistance =
+                        exactProgress.div(scaledGradientWidth)
+                    const interpolatedOpacity = oneMinus(normalizedDistance)
+                        .mul(0.95)
+                        .add(0.05)
+
+                    // Set opacity: 1.0 for current band, interpolated for bands within range, 0.0 for others
+                    const opacity = select(
+                        isCurrentBand,
+                        1.0, // Current band
+                        select(
+                            isWithinGradientRange,
+                            interpolatedOpacity, // Linear interpolation from 1.0 to 0.05
+                            0.0 // Bands outside gradient width
+                        )
+                    )
+
+                    // Apply color and intensity (reduced impact for gradient mode)
+                    const reducedIntensity = controls.scanIntensity * 0.04
+                    mask = opacity
+                        .mul(vec3(...controls.scanColor))
+                        .mul(reducedIntensity)
+                } else if (controls.scanType === "cross") {
+                    // Cross pattern mode
+                    const tiling = vec2(controls.tilingAmount)
+                    const tiledUv = mod(tUv.mul(tiling), 2.0).sub(1.0)
+
+                    const crossParams = vec2(
+                        float(controls.crossSize),
+                        float(controls.crossThickness)
+                    )
+                    const dist = sdCross(tiledUv, crossParams, float(0.0))
+                    const cross = vec3(smoothstep(0.0, 0.02, dist))
+
+                    flow = sub(
+                        1,
+                        smoothstep(0, 0.02, abs(depth.sub(uProgress)))
+                    )
+                    // Apply color and intensity (further reduced impact for cross mode)
+                    const crossIntensity = controls.scanIntensity * 0.1
+                    mask = oneMinus(cross)
+                        .mul(flow)
+                        .mul(vec3(...controls.scanColor))
+                        .mul(crossIntensity)
                 }
-            }, 3000)
-            
-        }, [textureMapUrl, depthMapUrl, setIsLoading])
 
-        // Main image material
-        const mainMaterial = useMemo(() => {
-            const material = new THREE.MeshBasicMaterial({
-                map: mainTexture,
-                transparent: true,
-                opacity: controls.showImage ? 1.0 : 0.0
-            })
-            return material
-        }, [mainTexture, controls.showImage])
+                // Blend the original texture with the scanning mask
+                // blendScreen creates a bright overlay effect
+                //@ts-ignore
+                const final = blendScreen(tMap, mask)
 
-        // Create depth-based scanning overlay using canvas
-        const scanOverlayMaterial = useMemo(() => {
-            if (!depthTexture || !mainTexture) return null
-            
-            console.log('🎨 Creating depth-based scanning overlay...')
-            
-            // Create a canvas to generate the scanning effect
-            const canvas = document.createElement('canvas')
-            canvas.width = 512
-            canvas.height = 512
-            const ctx = canvas.getContext('2d')!
-            
-            const overlayTexture = new THREE.CanvasTexture(canvas)
-            const material = new THREE.MeshBasicMaterial({
-                map: overlayTexture,
-                transparent: true,
-                blending: THREE.AdditiveBlending // This creates the bright overlay effect
-            })
-            
-            // Function to update the scanning effect
-            const updateScanEffect = (currentProgress: number, scanControls: DebugControls) => {
-                // Clear canvas
-                ctx.fillStyle = 'black'
-                ctx.fillRect(0, 0, canvas.width, canvas.height)
-                
-                // Create scanning effect based on progress
-                const [r, g, b] = scanControls.scanColor
-                const intensity = scanControls.scanIntensity
-                
-                if (scanControls.scanType === 'gradient') {
-                    // Gradient scanning - creates scanning bands that follow mouse position
-                    const gradientWidth = Math.max(scanControls.gradientWidth * 80, 20) // Minimum width for visibility
-                    const scanPosition = currentProgress * canvas.height
-                    
-                    // Create multiple gradient layers for a more dramatic effect
-                    for (let i = 0; i < 3; i++) {
-                        const offset = (i - 1) * 15 // Spread out the layers
-                        const layerIntensity = intensity * (1 - i * 0.3) // Fade each layer
-                        
-                        const gradient = ctx.createLinearGradient(0, scanPosition + offset - gradientWidth, 0, scanPosition + offset + gradientWidth)
-                        gradient.addColorStop(0, 'rgba(0,0,0,0)')
-                        gradient.addColorStop(0.3, `rgba(${r * 30}, ${g * 30}, ${b * 30}, ${layerIntensity * 0.3})`)
-                        gradient.addColorStop(0.5, `rgba(${r * 80}, ${g * 80}, ${b * 80}, ${layerIntensity})`)
-                        gradient.addColorStop(0.7, `rgba(${r * 30}, ${g * 30}, ${b * 30}, ${layerIntensity * 0.3})`)
-                        gradient.addColorStop(1, 'rgba(0,0,0,0)')
-                        
-                        ctx.fillStyle = gradient
-                        ctx.fillRect(0, scanPosition + offset - gradientWidth, canvas.width, gradientWidth * 2)
-                    }
-                    
-                    // Add central bright line for scan position
-                    ctx.fillStyle = `rgba(${r * 120}, ${g * 120}, ${b * 120}, ${intensity * 1.5})`
-                    ctx.fillRect(0, scanPosition - 2, canvas.width, 4)
-                    
-                } else if (scanControls.scanType === 'dots') {
-                    // Enhanced dot pattern scanning with animation
-                    const dotSize = scanControls.dotSize * 15
-                    const spacing = Math.max(512 / (scanControls.tilingAmount / 5), 20)
-                    const scanLine = currentProgress * canvas.height
-                    const time = Date.now() * 0.005
-                    
-                    // Create animated dots pattern around scan line
-                    for (let x = 0; x < canvas.width; x += spacing) {
-                        for (let y = scanLine - 80; y < scanLine + 80; y += spacing) {
-                            if (y >= 0 && y < canvas.height) {
-                                // Distance from scan line affects dot intensity
-                                const distanceFromScan = Math.abs(y - scanLine)
-                                const fadeMultiplier = 1 - (distanceFromScan / 80)
-                                
-                                if (fadeMultiplier > 0) {
-                                    // Animated pulsing effect
-                                    const pulse = Math.sin(time + x * 0.01 + y * 0.01) * 0.5 + 0.5
-                                    const finalIntensity = intensity * fadeMultiplier * pulse
-                                    
-                                    ctx.fillStyle = `rgba(${r * 60}, ${g * 60}, ${b * 60}, ${finalIntensity})`
-                                    ctx.beginPath()
-                                    ctx.arc(x + Math.sin(time + x * 0.05) * 3, y, dotSize * (0.5 + pulse * 0.5), 0, Math.PI * 2)
-                                    ctx.fill()
-                                    
-                                    // Add glow effect
-                                    ctx.shadowColor = `rgba(${r * 100}, ${g * 100}, ${b * 100}, ${finalIntensity * 0.5})`
-                                    ctx.shadowBlur = 10
-                                    ctx.fill()
-                                    ctx.shadowBlur = 0
-                                }
-                            }
-                        }
-                    }
-                    
-                } else if (scanControls.scanType === 'cross') {
-                    // Enhanced cross pattern scanning with rotation and glow
-                    const crossSize = scanControls.crossSize * 30
-                    const thickness = Math.max(scanControls.crossThickness * 150, 3)
-                    const spacing = 50
-                    const scanLine = currentProgress * canvas.height
-                    const time = Date.now() * 0.003
-                    
-                    for (let x = 0; x < canvas.width; x += spacing) {
-                        for (let y = scanLine - 70; y < scanLine + 70; y += spacing) {
-                            if (y >= 0 && y < canvas.height) {
-                                // Distance from scan line affects cross intensity
-                                const distanceFromScan = Math.abs(y - scanLine)
-                                const fadeMultiplier = 1 - (distanceFromScan / 70)
-                                
-                                if (fadeMultiplier > 0) {
-                                    const finalIntensity = intensity * fadeMultiplier
-                                    
-                                    // Save context for rotation
-                                    ctx.save()
-                                    ctx.translate(x, y)
-                                    ctx.rotate(time + x * 0.01 + y * 0.01) // Animated rotation
-                                    
-                                    // Cross with glow effect
-                                    ctx.fillStyle = `rgba(${r * 70}, ${g * 70}, ${b * 70}, ${finalIntensity})`
-                                    ctx.shadowColor = `rgba(${r * 150}, ${g * 150}, ${b * 150}, ${finalIntensity})`
-                                    ctx.shadowBlur = 8
-                                    
-                                    // Draw cross
-                                    ctx.fillRect(-crossSize/2, -thickness/2, crossSize, thickness)
-                                    ctx.fillRect(-thickness/2, -crossSize/2, thickness, crossSize)
-                                    
-                                    ctx.shadowBlur = 0
-                                    ctx.restore()
-                                }
-                            }
-                        }
-                    }
+                // Create the material that will render our effect
+                // MeshBasicNodeMaterial is a material that uses node-based shaders
+                const material = new THREE.MeshBasicNodeMaterial({
+                    colorNode: final, // Our final color calculation
+                })
+
+                return {
+                    material,
+                    uniforms: {
+                        uPointer,
+                        uProgress,
+                    },
                 }
-                
-                overlayTexture.needsUpdate = true
-            }
-            
-            // Store update function on material for later use
-            ;(material as any).updateScanEffect = updateScanEffect
-            
-            return material
-        }, [depthTexture, mainTexture])
+            }, [rawMap, depthMap, controls]) // Updated dependencies
 
-        // Update scanning effect every frame
-        useFrame(() => {
-            if (scanOverlayMaterial && (scanOverlayMaterial as any).updateScanEffect) {
-                ;(scanOverlayMaterial as any).updateScanEffect(progress, controls)
-            }
-        })
+            // Manual aspect calculation to avoid useAspect hook
+            const aspect = WIDTH / HEIGHT
+            const [w, h] = [aspect, 1]
 
-        if (!mainTexture) {
+            // useFrame is a React Three Fiber hook that runs every frame (60fps)
+            // This is where we update the uniforms based on mouse position
+            useFrame(() => {
+                // Update the progress uniform with the current progress value
+                // This controls where the scanning effect is active
+                uniforms.uProgress.value = progress
+            })
+
             return (
-                <mesh scale={scale}>
-                    <planeGeometry />
-                    <meshBasicMaterial color="gray" />
-                </mesh>
-            )
-        }
-
-        return (
-            <>
-                {/* Main image */}
-                <mesh ref={meshRef} scale={scale} material={mainMaterial}>
+                <mesh scale={[w, h, 1]} material={material}>
                     <planeGeometry />
                 </mesh>
-                
-                {/* Scanning overlay */}
-                {scanOverlayMaterial && (
-                    <mesh ref={scanOverlayRef} scale={scale} position={[0, 0, 0.001]} material={scanOverlayMaterial}>
-                        <planeGeometry />
-                    </mesh>
-                )}
-            </>
-        )
-    })
-
-    // Scene component that renders the 3D scanning effect
-    // This component handles the Three.js material creation and uniform updates
-    const SceneContent = React.memo(({
-        progress,
-        controls,
-    }: {
-        progress: number
-        controls: DebugControls
-    }) => {
-        console.log('SceneContent rendering with progress:', progress)
-        
-        // Use real scanning effect that recreates the original depth-based scanning
-        console.log('🎯 Using real 3D scanning effect')
-        return <ScanningScene progress={progress} controls={controls} />
-    })
-
-    // Inner component that uses R3F hooks - only called when properly mounted
-    const SceneContentInner = ({
-        progress,
-        controls,
-    }: {
-        progress: number
-        controls: DebugControls
-    }) => {
-        const { setIsLoading } = React.useContext(LoadingContext)
-        const [texturesLoaded, setTexturesLoaded] = useState(false)
-
-        // Fallback timeout to prevent infinite loading
-        useEffect(() => {
-            const timeout = setTimeout(() => {
-                console.log('Texture loading timeout - forcing loading complete')
-                setIsLoading(false)
-            }, 5000) // 5 second timeout
-
-            return () => clearTimeout(timeout)
-        }, [setIsLoading])
-
-        // useTexture is a React Three Fiber hook that loads textures asynchronously
-        console.log('SceneContentInner: Loading textures with URLs:', { textureMapUrl, depthMapUrl })
-        
-        let rawMap, depthMap
-        try {
-            [rawMap, depthMap] = useTexture(
-                [textureMapUrl, depthMapUrl],
-                (textures: THREE.Texture[]) => {
-                    console.log('✅ Textures loaded successfully!', textures)
-                    setTexturesLoaded(true)
-                    setIsLoading(false)
-                    // Set the color space for proper color rendering
-                    if (textures[0]) textures[0].colorSpace = THREE.SRGBColorSpace
-                }
             )
-            console.log('✅ useTexture returned:', { rawMap, depthMap })
         } catch (error) {
-            console.error('❌ useTexture failed:', error)
-            // Force loading complete even on error
-            setIsLoading(false)
-            // Return fallback textures or handle error
+            console.error("R3F Scene Error:", error)
+            // Return a fallback mesh if there's an error
             return (
                 <mesh>
-                    <planeGeometry args={[2, 2]} />
-                    <meshBasicMaterial color="red" />
+                    <planeGeometry />
+                    <meshBasicMaterial color="black" />
                 </mesh>
             )
         }
-
-        // useMemo is used to create the material and uniforms only when dependencies change
-        // This is important for performance in Three.js applications
-        const { material, uniforms } = useMemo(() => {
-            // Create uniforms - these are values that can be updated from JavaScript
-            // and passed to the shader (GPU code)
-            const uPointer = uniform(new THREE.Vector2(0)) // Mouse position
-            const uProgress = uniform(0) // Scanning progress (0 to 1)
-
-            // Strength of the displacement effect - fixed for now
-            const strength = 0.01 // TODO: Make this configurable in UI
-
-            // Create texture nodes from the maps
-            const tDepthMap = texture(depthMap)
-
-            // Create the main texture with displacement based on depth
-            // uv() gives us the current pixel coordinates (0-1 range)
-            // We add a displacement based on the depth map and mouse position
-            const tMap = !controls.showImage
-                ? vec3(0, 0, 0) // Black background when images are hidden
-                : texture(
-                      rawMap,
-                      uv().add(tDepthMap.r.mul(uPointer).mul(strength))
-                  )
-
-            // Calculate aspect ratio to maintain proper proportions
-            const aspect = float(WIDTH).div(HEIGHT)
-            // Create UV coordinates that account for aspect ratio
-            const tUv = vec2(uv().x.mul(aspect), uv().y)
-
-            // Get the depth value for the current pixel
-            const depth = tDepthMap
-
-            // Create the scanning flow effect based on mode
-            let flow
-            let mask
-
-            if (controls.scanType === "dots") {
-                // Dot-based scanning effect
-                const tiling = vec2(controls.tilingAmount)
-                const tiledUv = mod(tUv.mul(tiling), 2.0).sub(1.0)
-
-                // Generate noise for brightness variation
-                const brightness = mx_cell_noise_float(
-                    tUv.mul(tiling).div(2)
-                ).mul(0.1) // Fixed noise intensity
-
-                // Calculate distance from center of each tile
-                const dist = float(tiledUv.length())
-                // Create dots using smoothstep - creates smooth circular shapes
-                const dot = float(
-                    smoothstep(controls.dotSize, controls.dotSize - 0.01, dist)
-                ).mul(brightness)
-
-                flow = oneMinus(smoothstep(0, 0.02, abs(depth.sub(uProgress))))
-                // Apply color and intensity (reduced impact for dots mode)
-                const dotsIntensity = controls.scanIntensity * 0.5
-                mask = dot
-                    .mul(flow)
-                    .mul(vec3(...controls.scanColor))
-                    .mul(dotsIntensity)
-            } else if (controls.scanType === "gradient") {
-                // Gradient line mode - central band at full opacity, linear falloff to 0.05
-                const gradientWidth = float(controls.gradientWidth)
-
-                // Use depth map to determine which band we're in
-                const exactProgress = abs(depth.r.sub(uProgress))
-
-                // Scale the gradient width to be less sensitive
-                // The depth map values are very small, so we need to scale the gradient width accordingly
-                const scaledGradientWidth = gradientWidth.mul(0.1) // Scale down by 100x
-
-                // Opacity pattern:
-                // - Current progress band (exactProgress = 0): opacity = 1.0
-                // - Bands within gradientWidth range: linear interpolation from 1.0 to 0.05
-                // - Bands outside gradientWidth range: opacity = 0.0
-
-                // Check if we're at the current progress band
-                const isCurrentBand = exactProgress.lessThanEqual(0.001)
-
-                // Check if we're within the gradient width range
-                const isWithinGradientRange =
-                    exactProgress.lessThanEqual(scaledGradientWidth)
-
-                // Calculate linear interpolation for bands within range
-                // exactProgress goes from 0 to scaledGradientWidth
-                // We want opacity to go from 1.0 to 0.05
-                const normalizedDistance =
-                    exactProgress.div(scaledGradientWidth)
-                const interpolatedOpacity = oneMinus(normalizedDistance)
-                    .mul(0.95)
-                    .add(0.05)
-
-                // Set opacity: 1.0 for current band, interpolated for bands within range, 0.0 for others
-                const opacity = select(
-                    isCurrentBand,
-                    1.0, // Current band
-                    select(
-                        isWithinGradientRange,
-                        interpolatedOpacity, // Linear interpolation from 1.0 to 0.05
-                        0.0 // Bands outside gradient width
-                    )
-                )
-
-                // Apply color and intensity (reduced impact for gradient mode)
-                const reducedIntensity = controls.scanIntensity * 0.04
-                mask = opacity
-                    .mul(vec3(...controls.scanColor))
-                    .mul(reducedIntensity)
-            } else if (controls.scanType === "cross") {
-                // Cross pattern mode
-                const tiling = vec2(controls.tilingAmount)
-                const tiledUv = mod(tUv.mul(tiling), 2.0).sub(1.0)
-
-                const crossParams = vec2(
-                    float(controls.crossSize),
-                    float(controls.crossThickness)
-                )
-                const dist = sdCross(tiledUv, crossParams, float(0.0))
-                const cross = vec3(smoothstep(0.0, 0.02, dist))
-
-                flow = sub(1, smoothstep(0, 0.02, abs(depth.sub(uProgress))))
-                // Apply color and intensity (further reduced impact for cross mode)
-                const crossIntensity = controls.scanIntensity * 0.1
-                mask = oneMinus(cross)
-                    .mul(flow)
-                    .mul(vec3(...controls.scanColor))
-                    .mul(crossIntensity)
-            }
-
-            // Create the material that will render our effect
-            // Use basic material for better compatibility in Framer
-            const material = new THREE.MeshBasicMaterial({
-                map: rawMap,
-                transparent: true,
-                opacity: 0.9
-            })
-
-            return {
-                material,
-                uniforms: {
-                    uPointer,
-                    uProgress,
-                },
-            }
-        }, [rawMap, depthMap, controls]) // Updated dependencies
-
-        // useAspect calculates the proper scale to maintain aspect ratio
-        // This ensures the effect looks correct on different screen sizes
-        const [w, h] = useAspect(WIDTH, HEIGHT)
-
-        // useFrame is a React Three Fiber hook that runs every frame (60fps)
-        // For now, just ensure the material is ready (simplified for debugging)
-        useFrame(() => {
-            if (material && material.map) {
-                material.needsUpdate = true
-            }
-        })
-
-        return (
-            <mesh scale={[w, h, 1]} material={material}>
-                <planeGeometry />
-            </mesh>
-        )
     }
 
     // Debug Controls Panel Component
@@ -1547,7 +1218,7 @@ export default function ThreeDScanEffect(props: {
     // Html component that handles the UI layout and mouse tracking
     // This component manages the overall page structure and mouse interactions
     const Html = () => {
-        const { isLoading } = React.useContext(LoadingContext)
+        const [isLoading, setIsLoading] = useState(true)
         const isMobile = useIsMobile()
 
         // State to track mouse position and progress
@@ -1564,20 +1235,20 @@ export default function ThreeDScanEffect(props: {
         const loopAnimation = useAnimation()
         const loopProgressMotion = useMotionValue(0)
 
-        // Debug controls state - enhanced defaults for better visibility
+        // Debug controls state
         const [controls, setControls] = useState<DebugControls>({
             // Visual controls
             showImage: true,
             showDebugInfo: true,
             showControls: true,
 
-            // Scan type and properties - optimized for visibility
+            // Scan type and properties
             scanType: "gradient",
-            scanColor: [10, 3, 15], // Bright purple/blue scanning
-            scanIntensity: 2.0,     // High intensity for clear visibility
+            scanColor: [3, 3, 3],
+            scanIntensity: 0.4,
 
             // Type-specific properties
-            gradientWidth: 1.0,     // Wide gradient for clear scanning effect
+            gradientWidth: 0.0,
             tilingAmount: 120,
             dotSize: 0.5,
             crossSize: 0.3,
@@ -1846,15 +1517,6 @@ export default function ThreeDScanEffect(props: {
                     height: "100vh",
                 }}
             >
-                {/* CSS for loading animation */}
-                <style jsx>{`
-                    @keyframes ping {
-                        75%, 100% {
-                            transform: scale(2);
-                            opacity: 0;
-                        }
-                    }
-                `}</style>
                 {/* Hidden motion div to track loop animation progress */}
                 <motion.div
                     style={{ display: "none" }}
@@ -1882,68 +1544,25 @@ export default function ThreeDScanEffect(props: {
                         borderRadius: "1.5rem",
                         overflow: "hidden",
                         position: "relative",
-                        width: "90%",
-                        height: "90%",
+                        width: "60%",
+                        height: "60%",
                     }}
                     ref={containerRef}
                     onMouseMove={handleMouseMove}
                     onMouseEnter={handleMouseEnter}
                     onMouseLeave={handleMouseLeave}
                 >
-                    {/* Loading overlay - like the working version */}
-                    {isLoading && (
-                        <div style={{
-                            position: 'absolute',
-                            top: 0,
-                            left: 0,
-                            width: '100%',
-                            height: '100%',
-                            backgroundColor: '#1a1a1a',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            zIndex: 100
-                        }}>
-                            <div style={{
-                                width: '24px',
-                                height: '24px',
-                                backgroundColor: 'white',
-                                borderRadius: '50%',
-                                animation: 'ping 1s cubic-bezier(0, 0, 0.2, 1) infinite'
-                            }}>
-                                Loading...
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Three.js canvas with progress control - only render when NOT loading */}
-                    {typeof window !== 'undefined' && !isLoading ? (
-                        <ErrorBoundary>
-                            <SafeCanvas>
-                                <React.Suspense fallback={
-                                    <mesh>
-                                        <planeGeometry args={[2, 2]} />
-                                        <meshBasicMaterial color="gray" />
-                                    </mesh>
-                                }>
-                                    {/* Real 3D scanning effect */}
-                                    <SceneContent progress={progress} controls={controls} />
-                                </React.Suspense>
-                            </SafeCanvas>
-                        </ErrorBoundary>
-                    ) : (
-                        <div style={{
-                            width: '100%',
-                            height: '100%',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            backgroundColor: '#1a1a1a',
-                            color: 'white'
-                        }}>
-                            Loading WebGL...
-                        </div>
-                    )}
+                    {/* Three.js canvas with progress control */}
+                    <WebGPUCanvas>
+                        <PostProcessing />
+                        <React.Suspense fallback={null}>
+                            {/* Pass the progress value and controls to the Scene component */}
+                            <SceneContent
+                                progress={progress}
+                                controls={controls}
+                            />
+                        </React.Suspense>
+                    </WebGPUCanvas>
 
                     {/* Debug indicator - shows current progress value */}
                     {controls.showDebugInfo && (
@@ -1992,10 +1611,6 @@ export default function ThreeDScanEffect(props: {
                             <div>Mobile: {isMobile ? "YES" : "NO"}</div>
                             <div>Type: {controls.scanType}</div>
                             <div>Direction: {controls.progressDirection}</div>
-                            <div>Texture URL: {textureMapUrl ? 'SET' : 'MISSING'}</div>
-                            <div>Depth URL: {depthMapUrl ? 'SET' : 'MISSING'}</div>
-                            <div>Loading: {isLoading ? 'YES' : 'NO'}</div>
-                            <div>Canvas State: {typeof window !== 'undefined' && !isLoading ? 'READY' : 'WAITING'}</div>
                         </div>
                     )}
                 </div>
@@ -2003,11 +1618,7 @@ export default function ThreeDScanEffect(props: {
         )
     }
 
-    return (
-        <LoadingContext.Provider value={{ isLoading, setIsLoading }}>
-            <Html />
-        </LoadingContext.Provider>
-    )
+    return <Html />
 }
 
 // Property Controls for Framer

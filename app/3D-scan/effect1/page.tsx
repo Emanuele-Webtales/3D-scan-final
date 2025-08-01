@@ -16,7 +16,7 @@
  * - A depth map to create 3D-like displacement
  * - A noise pattern for the scanning dots
  * - Mouse position to control scanning progress
- * - GSAP for smooth text animations
+ * - Framer Motion for smooth animations
  * 
  * Combined Effects:
  * - Effect1: Original dot/line scanning with mouse control
@@ -26,12 +26,19 @@
 
 'use client';
 
-import { WebGPUCanvas } from '@/app/3D-scan/3D-scan-components/canvas';
+import { useMemo, useState, useRef, useEffect } from 'react';
+import { motion, useAnimation, useMotionValue } from 'framer-motion';
+
+//-----------------------------------
+// WE NEED TO BUNDLE THESE LIBRARIES IN A SINGLE FILE AND USE IT IN THE FRAMER PROJECT
+//-----------------------------------
+
+
+//Local development imports (for testing in Next.js)
 import { useAspect, useTexture } from '@react-three/drei';
-import { useFrame } from '@react-three/fiber';
-import { useContext, useMemo, useState, useRef, useEffect } from 'react';
-import { Tomorrow } from 'next/font/google';
-import gsap from 'gsap';
+import { useFrame, Canvas, useThree, extend } from '@react-three/fiber';
+import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
+import { pass } from 'three/tsl';
 
 import {
   abs,
@@ -43,7 +50,7 @@ import {
   mx_cell_noise_float,
   oneMinus,
   select,
-  ShaderNodeObject,
+  ShaderNode,
   smoothstep,
   sub,
   texture,
@@ -54,9 +61,44 @@ import {
 } from 'three/tsl';
 
 import * as THREE from 'three/webgpu';
-import { useGSAP } from '@gsap/react';
-import { GlobalContext, ContextProvider } from '@/context';
-import { PostProcessing } from '@/app/3D-scan/3D-scan-components/post-processing';
+
+// Extend THREE with WebGPU components
+extend(THREE as any);
+
+//-----------------------------------
+//FOR FRAMER: Use this import instead of the individual imports above
+//-----------------------------------
+// import {
+//   THREE,
+//   useAspect,
+//   useTexture,
+//   useFrame,
+//   Canvas,
+//   useThree,
+//   bloom,
+//   pass,
+//   abs,
+//   blendScreen,
+//   float,
+//   Fn,
+//   max,
+//   mod,
+//   mx_cell_noise_float,
+//   oneMinus,
+//   select,
+//   ShaderNode,
+//   smoothstep,
+//   sub,
+//   texture,
+//   uniform,
+//   uv,
+//   vec2,
+//   vec3,
+// } from "https://raw.githubusercontent.com/Emanuele-Webtales/npm-bundles/main/3D-scan-bundle/dist/bundle.js";
+
+//-----------------------------------
+//
+//-----------------------------------
 import TEXTUREMAP from '@/app/3D-scan/3D-scan-assets/raw-1.png';
 import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/depth-1.png';
 
@@ -71,7 +113,7 @@ const HEIGHT = 900;
 
 // Custom cross pattern function from effect3
 const sdCross = Fn(
-  ([p_immutable, b_immutable, r_immutable]: ShaderNodeObject<THREE.Node>[]) => {
+  ([p_immutable, b_immutable, r_immutable]: any[]) => {
     const r = float(r_immutable).toVar();
     const b = vec2(b_immutable).toVar();
     const p = vec2(p_immutable).toVar();
@@ -139,6 +181,53 @@ const useIsMobile = () => {
 	return isMobile;
 };
 
+// Inline WebGPUCanvas component
+const WebGPUCanvas = (props: any) => {
+  return (
+    <Canvas
+      {...props}
+      flat
+      gl={async (glProps: any) => {
+        const renderer = new THREE.WebGPURenderer(glProps as any);
+        await renderer.init();
+        return renderer;
+      }}
+    >
+      {props.children}
+    </Canvas>
+  );
+};
+
+// Inline PostProcessing component
+const PostProcessing = ({
+  strength = 1,
+  threshold = 1,
+}: {
+  strength?: number;
+  threshold?: number;
+}) => {
+  const { gl, scene, camera } = useThree();
+
+  const render = useMemo(() => {
+    const postProcessing = new THREE.PostProcessing(gl as any);
+    const scenePass = pass(scene, camera);
+    const scenePassColor = scenePass.getTextureNode('output');
+    const bloomPass = bloom(scenePassColor, strength, 0.5, threshold);
+
+    const final = scenePassColor.add(bloomPass);
+
+    postProcessing.outputNode = final;
+
+    return postProcessing;
+  }, [camera, gl, scene, strength, threshold]);
+
+  useFrame(() => {
+    render.renderAsync();
+  }, 1);
+
+  return null;
+};
+
 // Scene component that renders the 3D scanning effect
 // This component handles the Three.js material creation and uniform updates
 const Scene = ({ 
@@ -148,7 +237,7 @@ const Scene = ({
 	progress: number;
 	controls: DebugControls;
 }) => {
-	const { setIsLoading } = useContext(GlobalContext);
+	const [isLoading, setIsLoading] = useState(true);
 
 	// useTexture is a React Three Fiber hook that loads textures asynchronously
 	// It returns an array of textures and a callback when loading is complete
@@ -325,48 +414,85 @@ const DebugPanel = ({
 		/**
 		 * The debug panel UI
 		 */
-		<div className="fixed top-4 bottom-4 overflow-y-scroll left-4 bg-black/60 backdrop-blur-sm bg-opacity-80 text-white p-4 rounded-lg text-sm font-mono z-50 max-w-80">
+		<div style={{
+			position: 'fixed',
+			top: '1rem',
+			bottom: '1rem',
+			overflowY: 'scroll',
+			left: '1rem',
+			backgroundColor: 'rgba(0, 0, 0, 0.6)',
+			backdropFilter: 'blur(4px)',
+			color: 'white',
+			padding: '1rem',
+			borderRadius: '0.5rem',
+			fontSize: '0.875rem',
+			fontFamily: 'monospace',
+			zIndex: 50,
+			maxWidth: '20rem'
+		}}>
 			{/* Header with collapse toggle */}
-			<div className="flex justify-between items-center mb-4">
-				<h3 className="font-bold text-lg">Debug Controls</h3>
+			<div style={{
+				display: 'flex',
+				justifyContent: 'space-between',
+				alignItems: 'center',
+				marginBottom: '1rem'
+			}}>
+				<h3 style={{
+					fontWeight: 'bold',
+					fontSize: '1.125rem'
+				}}>Debug Controls</h3>
 				<button 
 					onClick={() => setIsCollapsed(!isCollapsed)}
-					className="text-xs bg-gray-700 px-2 py-1 rounded"
+					style={{
+						fontSize: '0.75rem',
+						backgroundColor: '#374151',
+						padding: '0.25rem 0.5rem',
+						borderRadius: '0.25rem',
+						border: 'none',
+						color: 'white',
+						cursor: 'pointer'
+					}}
 				>
 					{isCollapsed ? '▼' : '▲'}
 				</button>
 			</div>
 
 			{!isCollapsed && (
-				<div className="space-y-4">
+				<div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
 					{/* Visual Controls */}
-					<div className="border-b border-gray-600 pb-2">
-						<h4 className="font-semibold mb-2">Visual Controls</h4>
-						<div className="space-y-2">
-							<label className="flex items-center">
+					<div style={{
+						borderBottom: '1px solid #4B5563',
+						paddingBottom: '0.5rem'
+					}}>
+						<h4 style={{
+							fontWeight: '600',
+							marginBottom: '0.5rem'
+						}}>Visual Controls</h4>
+						<div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+							<label style={{ display: 'flex', alignItems: 'center' }}>
 								<input
 									type="checkbox"
 									checked={controls.showImage}
 									onChange={(e) => updateControl('showImage', e.target.checked)}
-									className="mr-2"
+									style={{ marginRight: '0.5rem' }}
 								/>
 								Show Image
 							</label>
-							<label className="flex items-center">
+							<label style={{ display: 'flex', alignItems: 'center' }}>
 								<input
 									type="checkbox"
 									checked={controls.showDebugInfo}
 									onChange={(e) => updateControl('showDebugInfo', e.target.checked)}
-									className="mr-2"
+									style={{ marginRight: '0.5rem' }}
 								/>
 								Show Debug Info
 							</label>
-							<label className="flex items-center">
+							<label style={{ display: 'flex', alignItems: 'center' }}>
 								<input
 									type="checkbox"
 									checked={controls.showControls}
 									onChange={(e) => updateControl('showControls', e.target.checked)}
-									className="mr-2"
+									style={{ marginRight: '0.5rem' }}
 								/>
 								Show Controls
 							</label>
@@ -374,15 +500,33 @@ const DebugPanel = ({
 					</div>
 
 					{/* Scan Type and Properties */}
-					<div className="border-b border-gray-600 pb-2">
-						<h4 className="font-semibold mb-2">Scan Type</h4>
-						<div className="space-y-2">
+					<div style={{
+						borderBottom: '1px solid #4B5563',
+						paddingBottom: '0.5rem'
+					}}>
+						<h4 style={{
+							fontWeight: '600',
+							marginBottom: '0.5rem'
+						}}>Scan Type</h4>
+						<div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
 							<div>
-								<label className="block text-xs mb-1">Type</label>
+								<label style={{
+									display: 'block',
+									fontSize: '0.75rem',
+									marginBottom: '0.25rem'
+								}}>Type</label>
 								<select
 									value={controls.scanType}
 									onChange={(e) => updateControl('scanType', e.target.value as 'gradient' | 'dots' | 'cross')}
-									className="w-full bg-gray-700 text-white px-2 py-1 rounded text-xs"
+									style={{
+										width: '100%',
+										backgroundColor: '#374151',
+										color: 'white',
+										padding: '0.25rem 0.5rem',
+										borderRadius: '0.25rem',
+										fontSize: '0.75rem',
+										border: 'none'
+									}}
 								>
 									<option value="gradient">Gradient</option>
 									<option value="dots">Dots</option>
@@ -391,7 +535,11 @@ const DebugPanel = ({
 							</div>
 							
 							<div>
-								<label className="block text-xs mb-1">Scan Intensity: {controls.scanIntensity.toFixed(2)}</label>
+								<label style={{
+									display: 'block',
+									fontSize: '0.75rem',
+									marginBottom: '0.25rem'
+								}}>Scan Intensity: {controls.scanIntensity.toFixed(2)}</label>
 								<input
 									type="range"
 									min="0"
@@ -399,13 +547,17 @@ const DebugPanel = ({
 									step="0.05"
 									value={controls.scanIntensity}
 									onChange={(e) => updateControl('scanIntensity', parseFloat(e.target.value))}
-									className="w-full"
+									style={{ width: '100%' }}
 								/>
 							</div>
 							
-							<div className='flex flex-col gap-2'>
-								<label className="block text-xs mb-1">Scan Color (R, G, B)</label>
-								<div className="flex flex-col space-x-2">
+							<div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+								<label style={{
+									display: 'block',
+									fontSize: '0.75rem',
+									marginBottom: '0.25rem'
+								}}>Scan Color (R, G, B)</label>
+								<div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
 									<input
 										type="range"
 										min="0"
@@ -413,7 +565,7 @@ const DebugPanel = ({
 										step="0.5"
 										value={controls.scanColor[0]}
 										onChange={(e) => updateControl('scanColor', [parseFloat(e.target.value), controls.scanColor[1], controls.scanColor[2]])}
-										className="flex-1"
+										style={{ flex: 1 }}
 									/>
 									<input
 										type="range"
@@ -422,7 +574,7 @@ const DebugPanel = ({
 										step="0.5"
 										value={controls.scanColor[1]}
 										onChange={(e) => updateControl('scanColor', [controls.scanColor[0], parseFloat(e.target.value), controls.scanColor[2]])}
-										className="flex-1"
+										style={{ flex: 1 }}
 									/>
 									<input
 										type="range"
@@ -431,7 +583,7 @@ const DebugPanel = ({
 										step="0.5"
 										value={controls.scanColor[2]}
 										onChange={(e) => updateControl('scanColor', [controls.scanColor[0], controls.scanColor[1], parseFloat(e.target.value)])}
-										className="flex-1"
+										style={{ flex: 1 }}
 									/>
 								</div>
 							</div>
@@ -439,7 +591,11 @@ const DebugPanel = ({
 							{/* Type-specific controls */}
 							{controls.scanType === 'gradient' && (
 								<div>
-									<label className="block text-xs mb-1">Gradient Width: {controls.gradientWidth.toFixed(2)}</label>
+									<label style={{
+										display: 'block',
+										fontSize: '0.75rem',
+										marginBottom: '0.25rem'
+									}}>Gradient Width: {controls.gradientWidth.toFixed(2)}</label>
 									<input
 										type="range"
 										min="0"
@@ -447,57 +603,73 @@ const DebugPanel = ({
 										step="0.1"
 										value={controls.gradientWidth}
 										onChange={(e) => updateControl('gradientWidth', parseFloat(e.target.value))}
-										className="w-full"
+										style={{ width: '100%' }}
 									/>
-						</div>
+								</div>
 							)}
 
 							{controls.scanType !== 'gradient' && (
-							<div>
-								<label className="block text-xs mb-1">Tiling Amount: {controls.tilingAmount.toFixed(0)}</label>
-								<input
-									type="range"
-									min="10"
-									max="200"
-									step="5"
-									value={controls.tilingAmount}
-									onChange={(e) => updateControl('tilingAmount', parseFloat(e.target.value))}
-									className="w-full"
-								/>
-							</div>
+								<div>
+									<label style={{
+										display: 'block',
+										fontSize: '0.75rem',
+										marginBottom: '0.25rem'
+									}}>Tiling Amount: {controls.tilingAmount.toFixed(0)}</label>
+									<input
+										type="range"
+										min="10"
+										max="200"
+										step="5"
+										value={controls.tilingAmount}
+										onChange={(e) => updateControl('tilingAmount', parseFloat(e.target.value))}
+										style={{ width: '100%' }}
+									/>
+								</div>
 							)}
 
 							{controls.scanType === 'dots' && (
-							<div>
-								<label className="block text-xs mb-1">Dot Size: {controls.dotSize.toFixed(3)}</label>
-								<input
-									type="range"
-									min="0.1"
-									max="0.9"
-									step="0.01"
-									value={controls.dotSize}
-									onChange={(e) => updateControl('dotSize', parseFloat(e.target.value))}
-									className="w-full"
-								/>
-							</div>
+								<div>
+									<label style={{
+										display: 'block',
+										fontSize: '0.75rem',
+										marginBottom: '0.25rem'
+									}}>Dot Size: {controls.dotSize.toFixed(3)}</label>
+									<input
+										type="range"
+										min="0.1"
+										max="0.9"
+										step="0.01"
+										value={controls.dotSize}
+										onChange={(e) => updateControl('dotSize', parseFloat(e.target.value))}
+										style={{ width: '100%' }}
+									/>
+								</div>
 							)}
 
 							{controls.scanType === 'cross' && (
 								<>
-							<div>
-										<label className="block text-xs mb-1">Cross Size: {controls.crossSize.toFixed(2)}</label>
-								<input
-									type="range"
+									<div>
+										<label style={{
+											display: 'block',
+											fontSize: '0.75rem',
+											marginBottom: '0.25rem'
+										}}>Cross Size: {controls.crossSize.toFixed(2)}</label>
+										<input
+											type="range"
 											min="0.1"
 											max="0.8"
 											step="0.01"
 											value={controls.crossSize}
 											onChange={(e) => updateControl('crossSize', parseFloat(e.target.value))}
-									className="w-full"
-								/>
-							</div>
+											style={{ width: '100%' }}
+										/>
+									</div>
 									<div>
-										<label className="block text-xs mb-1">Cross Thickness: {controls.crossThickness.toFixed(3)}</label>
+										<label style={{
+											display: 'block',
+											fontSize: '0.75rem',
+											marginBottom: '0.25rem'
+										}}>Cross Thickness: {controls.crossThickness.toFixed(3)}</label>
 										<input
 											type="range"
 											min="0.01"
@@ -505,7 +677,7 @@ const DebugPanel = ({
 											step="0.001"
 											value={controls.crossThickness}
 											onChange={(e) => updateControl('crossThickness', parseFloat(e.target.value))}
-											className="w-full"
+											style={{ width: '100%' }}
 										/>
 									</div>
 								</>
@@ -514,26 +686,44 @@ const DebugPanel = ({
 					</div>
 
 					{/* Hover Options */}
-					<div className="border-b border-gray-600 pb-2">
-						<h4 className="font-semibold mb-2">Hover Options</h4>
-						<div className="space-y-2">
-							<label className="flex items-center">
+					<div style={{
+						borderBottom: '1px solid #4B5563',
+						paddingBottom: '0.5rem'
+					}}>
+						<h4 style={{
+							fontWeight: '600',
+							marginBottom: '0.5rem'
+						}}>Hover Options</h4>
+						<div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+							<label style={{ display: 'flex', alignItems: 'center' }}>
 								<input
 									type="checkbox"
 									checked={controls.hoverEnabled}
 									onChange={(e) => updateControl('hoverEnabled', e.target.checked)}
-									className="mr-2"
+									style={{ marginRight: '0.5rem' }}
 								/>
 								Enable Hover {isMobile && "(Disabled on mobile)"}
 							</label>
 							
 							{controls.hoverEnabled && !isMobile && (
 								<div>
-									<label className="block text-xs mb-1">Progress Direction</label>
+									<label style={{
+										display: 'block',
+										fontSize: '0.75rem',
+										marginBottom: '0.25rem'
+									}}>Progress Direction</label>
 									<select
 										value={controls.progressDirection}
 										onChange={(e) => updateControl('progressDirection', e.target.value)}
-										className="w-full bg-gray-700 text-white px-2 py-1 rounded text-xs"
+										style={{
+											width: '100%',
+											backgroundColor: '#374151',
+											color: 'white',
+											padding: '0.25rem 0.5rem',
+											borderRadius: '0.25rem',
+											fontSize: '0.75rem',
+											border: 'none'
+										}}
 									>
 										<option value="topToBottom">Top to Bottom</option>
 										<option value="bottomToTop">Bottom to Top</option>
@@ -549,14 +739,17 @@ const DebugPanel = ({
 
 					{/* Loop Options */}
 					<div>
-						<h4 className="font-semibold mb-2">Loop Options</h4>
-						<div className="space-y-2">
-							<label className="flex items-center">
+						<h4 style={{
+							fontWeight: '600',
+							marginBottom: '0.5rem'
+						}}>Loop Options</h4>
+						<div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+							<label style={{ display: 'flex', alignItems: 'center' }}>
 								<input
 									type="checkbox"
 									checked={controls.loopEnabled}
 									onChange={(e) => updateControl('loopEnabled', e.target.checked)}
-									className="mr-2"
+									style={{ marginRight: '0.5rem' }}
 								/>
 								Loop
 							</label>
@@ -564,11 +757,23 @@ const DebugPanel = ({
 							{controls.loopEnabled && (
 								<>
 									<div>
-										<label className="block text-xs mb-1">Loop Type</label>
+										<label style={{
+											display: 'block',
+											fontSize: '0.75rem',
+											marginBottom: '0.25rem'
+										}}>Loop Type</label>
 										<select
 											value={controls.loopType}
 											onChange={(e) => updateControl('loopType', e.target.value)}
-											className="w-full bg-gray-700 text-white px-2 py-1 rounded text-xs"
+											style={{
+												width: '100%',
+												backgroundColor: '#374151',
+												color: 'white',
+												padding: '0.25rem 0.5rem',
+												borderRadius: '0.25rem',
+												fontSize: '0.75rem',
+												border: 'none'
+											}}
 										>
 											<option value="oneShot">One Shot</option>
 											<option value="repeat">Repeat</option>
@@ -576,27 +781,43 @@ const DebugPanel = ({
 										</select>
 									</div>
 									<div>
-										<label className="block text-xs mb-1">Loop Duration: {controls.loopDuration}s</label>
-											<input
-												type="range"
+										<label style={{
+											display: 'block',
+											fontSize: '0.75rem',
+											marginBottom: '0.25rem'
+										}}>Loop Duration: {controls.loopDuration}s</label>
+										<input
+											type="range"
 											min="0.5"
 											max="10"
-												step="0.1"
+											step="0.1"
 											value={controls.loopDuration}
 											onChange={(e) => updateControl('loopDuration', parseFloat(e.target.value))}
-											className="w-full"
+											style={{ width: '100%' }}
 										/>
 									</div>
 									<div>
-										<label className="block text-xs mb-1">Loop Easing</label>
-											<input
+										<label style={{
+											display: 'block',
+											fontSize: '0.75rem',
+											marginBottom: '0.25rem'
+										}}>Loop Easing</label>
+										<input
 											type="text"
 											value={controls.loopEasing}
 											onChange={(e) => updateControl('loopEasing', e.target.value)}
 											placeholder="e.g. power2.inOut, elastic.out"
-											className="w-full bg-gray-700 text-white px-2 py-1 rounded text-xs"
-											/>
-										</div>
+											style={{
+												width: '100%',
+												backgroundColor: '#374151',
+												color: 'white',
+												padding: '0.25rem 0.5rem',
+												borderRadius: '0.25rem',
+												fontSize: '0.75rem',
+												border: 'none'
+											}}
+										/>
+									</div>
 								</>
 							)}
 						</div>
@@ -610,7 +831,7 @@ const DebugPanel = ({
 // Html component that handles the UI layout and mouse tracking
 // This component manages the overall page structure and mouse interactions
 const Html = () => {
-	const { isLoading } = useContext(GlobalContext);
+	const [isLoading, setIsLoading] = useState(true);
 	const isMobile = useIsMobile();
 	
 	// State to track mouse position and progress
@@ -623,7 +844,8 @@ const Html = () => {
 	const [transitionStartProgress, setTransitionStartProgress] = useState(0);
 	const [transitionStartTime, setTransitionStartTime] = useState(0);
 	const containerRef = useRef<HTMLDivElement>(null);
-	const timelineRef = useRef<gsap.core.Timeline | null>(null);
+	const loopAnimation = useAnimation();
+	const loopProgressMotion = useMotionValue(0);
 
 	// Debug controls state
 	const [controls, setControls] = useState<DebugControls>({
@@ -655,60 +877,73 @@ const Html = () => {
 		loopEasing: 'power2.inOut',
 	});
 
-	// Loop animation
+	// Convert GSAP easing to Framer Motion easing
+	const getEasing = (easing: string) => {
+		switch (easing) {
+			case 'power2.inOut': return 'easeInOut';
+			case 'power2.in': return 'easeIn';
+			case 'power2.out': return 'easeOut';
+			case 'power1.inOut': return 'easeInOut';
+			case 'power1.in': return 'easeIn';
+			case 'power1.out': return 'easeOut';
+			default: return 'easeInOut'; // Default to power2.inOut
+		}
+	};
+
+	// Loop animation with Framer Motion
 	useEffect(() => {
 		if (!controls.loopEnabled) {
-			if (timelineRef.current) {
-				timelineRef.current.kill();
-				timelineRef.current = null;
-			}
+			loopAnimation.stop();
 			return;
 		}
 
-		// Kill existing timeline if it exists
-		if (timelineRef.current) {
-			timelineRef.current.kill();
-		}
+		// Stop any existing animation
+		loopAnimation.stop();
 
-		const timeline = gsap.timeline({
-			repeat: controls.loopType === 'repeat' ? -1 : (controls.loopType === 'oneShot' ? 0 : -1),
-			yoyo: controls.loopType === 'mirror',
-		});
-
-		timeline.to({}, {
-			duration: controls.loopDuration,
-			ease: controls.loopEasing,
-			onUpdate: function() {
-				const currentLoopProgress = this.progress();
-				setLoopProgress(currentLoopProgress);
-				
-				// Only set the main progress if not hovering
-				if (!isHovering) {
-					setProgress(currentLoopProgress);
+		const animateLoop = async () => {
+			const repeatCount = controls.loopType === 'repeat' ? Infinity : 
+							   controls.loopType === 'oneShot' ? 0 : Infinity;
+			
+			await loopAnimation.start({
+				x: [0, 1],
+				transition: {
+					duration: controls.loopDuration,
+					ease: getEasing(controls.loopEasing),
+					repeat: repeatCount,
+					repeatType: controls.loopType === 'mirror' ? 'reverse' : 'loop',
 				}
-			}
-		});
+			});
+		};
 
-		// Store the timeline in ref for pause/resume control
-		timelineRef.current = timeline;
+		animateLoop();
 
 		return () => {
-			if (timelineRef.current) {
-				timelineRef.current.kill();
-				timelineRef.current = null;
-			}
+			loopAnimation.stop();
 		};
-	}, [controls.loopEnabled, controls.loopDuration, controls.loopType, controls.loopEasing]);
+	}, [controls.loopEnabled, controls.loopDuration, controls.loopType, controls.loopEasing, loopAnimation]);
 
-	// Handle hover state changes for timeline control
+	// Update progress based on loop animation
 	useEffect(() => {
-		if (!controls.loopEnabled || !timelineRef.current) return;
+		const unsubscribe = loopProgressMotion.on('change', (latest) => {
+			setLoopProgress(latest);
+			// Only set the main progress if not hovering
+			if (!isHovering) {
+				setProgress(latest);
+			}
+		});
+
+		return unsubscribe;
+	}, [loopProgressMotion, isHovering]);
+
+	// Handle hover state changes for loop animation control
+	useEffect(() => {
+		if (!controls.loopEnabled) return;
 		
 		if (isHovering && controls.hoverEnabled && !isMobile) {
-			timelineRef.current.pause();
+			loopAnimation.stop();
 		}
 		// Don't auto-resume here - let handleMouseLeave handle it
-	}, [isHovering, controls.hoverEnabled, controls.loopEnabled, isMobile]);
+	}, [isHovering, controls.hoverEnabled, controls.loopEnabled, isMobile, loopAnimation]);
 
 	// Handle mouse movement to control the scanning effect
 	const handleMouseMove = (e: React.MouseEvent) => {
@@ -812,56 +1047,72 @@ const Html = () => {
 		setTransitionComplete(false);
 		setIsTransitioning(false);
 		
-		if (controls.loopEnabled && timelineRef.current) {
-			// Set the timeline to continue from the current hover position
-			timelineRef.current.progress(progress);
-			// Update loop progress to match
+		if (controls.loopEnabled) {
+			// Set the loop progress to match current progress
 			setLoopProgress(progress);
-			// Resume the timeline
-			timelineRef.current.resume();
-		} else {
-			// Reset to no scanning when mouse leaves (if no loop active)
-			setProgress(0);
+			// Resume the loop animation from current position
+			loopAnimation.set({ x: progress });
+			loopAnimation.start({
+				x: [progress, 1],
+				transition: {
+					duration: controls.loopDuration * (1 - progress),
+					ease: getEasing(controls.loopEasing),
+					repeat: controls.loopType === 'repeat' ? Infinity : 
+						   controls.loopType === 'oneShot' ? 0 : Infinity,
+					repeatType: controls.loopType === 'mirror' ? 'reverse' : 'loop',
+				}
+			});
 		}
 	};
 
-	useGSAP(() => {
+	// Loading animations with Framer Motion
+	useEffect(() => {
 		if (!isLoading) {
-			gsap
-				.timeline()
-				.to('[data-loader]', {
-					opacity: 0,
-				})
-				.from('[data-title]', {
-					yPercent: -100,
-					stagger: {
-						each: 0.15,
-					},
-					ease: 'power1.out',
-				})
-				.from('[data-desc]', {
-					opacity: 0,
-					yPercent: 100,
-				});
+			// Note: The loading animations are currently commented out in the JSX
+			// If you want to add them back, you can use motion components
+			// For example: <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} />
 		}
 	}, [isLoading]);
 
 	return (
-		<div className='flex bg-stone-600 flex-col items-center justify-center h-screen'>
+		<div style={{
+			display: 'flex',
+			backgroundColor: '#78716C',
+			flexDirection: 'column',
+			alignItems: 'center',
+			justifyContent: 'center',
+			height: '100vh'
+		}}>
+			{/* Hidden motion div to track loop animation progress */}
+			<motion.div
+				style={{ display: 'none' }}
+				animate={loopAnimation}
+				onUpdate={(latest) => {
+					if (typeof latest.x === 'number') {
+						loopProgressMotion.set(latest.x);
+					}
+				}}
+			/>
 			{/* Loading overlay */}
-			<div
+			{/* <div
 				className="h-svh fixed z-90 bg-yellow-900 pointer-events-none w-full flex justify-center items-center"
 				data-loader
 			>
 				<div className="w-6 h-6 bg-white animate-ping rounded-full"></div>
-			</div>
+			</div> */}
 			
 			{/* Debug Controls Panel */}
 			<DebugPanel controls={controls} setControls={setControls} />
 			
 			{/* Main container with mouse tracking */}
 			<div 
-				className=" rounded-3xl overflow-hidden relative w-[60%] h-[60%]"
+				style={{
+					borderRadius: '1.5rem',
+					overflow: 'hidden',
+					position: 'relative',
+					width: '60%',
+					height: '60%'
+				}}
 				ref={containerRef}
 				onMouseMove={handleMouseMove}
 				onMouseEnter={handleMouseEnter}
@@ -878,14 +1129,25 @@ const Html = () => {
 				
 				{/* Debug indicator - shows current progress value */}
 				{controls.showDebugInfo && (
-					<div className="fixed top-4 right-4 bg-black bg-opacity-50 text-white px-3 py-2 rounded text-sm font-mono z-50">
+					<div style={{
+						position: 'fixed',
+						top: '1rem',
+						right: '1rem',
+						backgroundColor: 'rgba(0, 0, 0, 0.5)',
+						color: 'white',
+						padding: '0.5rem 0.75rem',
+						borderRadius: '0.25rem',
+						fontSize: '0.875rem',
+						fontFamily: 'monospace',
+						zIndex: 50
+					}}>
 						<div>Progress: {(progress * 100).toFixed(1)}%</div>
 						{controls.loopEnabled && <div>Loop Progress: {(loopProgress * 100).toFixed(1)}%</div>}
 						<div>Mouse Y: {(mouseY * 100).toFixed(1)}%</div>
 						<div>Loop: {controls.loopEnabled ? 'ON' : 'OFF'}</div>
 						<div>Hover: {controls.hoverEnabled && !isMobile ? (isHovering ? 'ACTIVE' : 'ON') : 'OFF'}</div>
-						{controls.loopEnabled && timelineRef.current && (
-							<div>Timeline: {timelineRef.current.paused() ? 'PAUSED' : 'PLAYING'}</div>
+						{controls.loopEnabled && (
+							<div>Animation: {isHovering ? 'PAUSED' : 'PLAYING'}</div>
 						)}
 						<div>Transitioning: {isTransitioning ? 'YES' : 'NO'}</div>
 						<div>Mobile: {isMobile ? 'YES' : 'NO'}</div>
@@ -900,8 +1162,6 @@ const Html = () => {
 
 export default function Home() {
 	return (
-		<ContextProvider>
-			<Html />
-		</ContextProvider>
+		<Html />
 	);
 }

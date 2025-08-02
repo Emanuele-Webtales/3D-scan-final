@@ -303,6 +303,18 @@ export default function ThreeDScanEffectGood(props: {
         return (
             <Canvas
                 {...props}
+                style={{
+                    width: "100%",
+                    height: "100%",
+                }}
+                resize={{ offsetSize: true }}
+                gl={{
+                    antialias: true,
+                    powerPreference: "high-performance",
+                    precision: "mediump",
+                    depth: true,
+                }}
+                dpr={[1, 2]}
                 flat
                 camera={{ position: [0, 0, 1] }}
                 onCreated={(state: any) => {
@@ -382,9 +394,23 @@ export default function ThreeDScanEffectGood(props: {
             const [depthTexture, setDepthTexture] =
                 useState<THREE.Texture | null>(null)
 
-            // Calculate aspect ratio manually (no useAspect hook)
-            const aspectRatio = WIDTH / HEIGHT
-            const scale = [aspectRatio, 1, 1] as [number, number, number]
+            // Calculate proper "cover" scale to fill container without stretching
+            // This mimics CSS object-fit: cover behavior
+            const containerAspect = 1 // Canvas default viewport is square (-1 to 1)
+            const imageAspect = WIDTH / HEIGHT // 1600/900 = 1.78
+            
+            let scaleX, scaleY
+            if (imageAspect > containerAspect) {
+                // Image is wider than container - scale to fill height
+                scaleY = 2 // Fill the full height (-1 to 1 = 2 units)
+                scaleX = scaleY * imageAspect
+            } else {
+                // Image is taller than container - scale to fill width  
+                scaleX = 2 // Fill the full width (-1 to 1 = 2 units)
+                scaleY = scaleX / imageAspect
+            }
+            
+            const scale = [scaleX, scaleY, 1] as [number, number, number]
 
             // Load both main texture and depth map
             useEffect(() => {

@@ -956,6 +956,7 @@ export default function ThreeDScanEffectGood(props: {
 
         if (!controls.showControls) return null
 
+        //Debug panel return statement
         return (
             /**
              * The debug panel UI
@@ -1951,11 +1952,14 @@ export default function ThreeDScanEffectGood(props: {
             <div
                 style={{
                     display: "flex",
-                    backgroundColor: "#78716C",
+                    backgroundColor: "rgba(42, 40, 38, 0.5)",
                     flexDirection: "column",
                     alignItems: "center",
                     justifyContent: "center",
-                    height: "100vh",
+                    height: "100%",
+                    width:"100%",
+                    border:"1px solid green"
+                    
                 }}
             >
                 {/* CSS for loading animation */}
@@ -1994,8 +1998,15 @@ export default function ThreeDScanEffectGood(props: {
                         borderRadius: "1.5rem",
                         overflow: "hidden",
                         position: "relative",
-                        width: "90%",
-                        height: "90%",
+                        width: "100%",
+                        height: "100%",
+                        border:"1px solid blue",
+                        display:"flex",
+                        alignItems:"center",
+                        justifyContent:"center",
+                        backgroundColor:"red",
+                        zIndex:10,
+                      
                     }}
                     ref={containerRef}
                     onMouseMove={handleMouseMove}
@@ -2006,16 +2017,15 @@ export default function ThreeDScanEffectGood(props: {
                     {isLoading && (
                         <div
                             style={{
-                                position: "absolute",
-                                top: 0,
-                                left: 0,
-                                width: "100%",
-                                height: "100%",
+                                position: "relative",
+                            
+                                width: "15%",
+                                height: "15%",
                                 backgroundColor: "#1a1a1a",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",
-                                zIndex: 100,
+                                zIndex: 10,
                             }}
                         >
                             <div
@@ -2056,8 +2066,8 @@ export default function ThreeDScanEffectGood(props: {
                     ) : (
                         <div
                             style={{
-                                width: "100%",
-                                height: "100%",
+                                width: "15%",
+                                height: "15%",
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "center",

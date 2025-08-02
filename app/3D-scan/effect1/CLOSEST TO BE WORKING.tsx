@@ -88,11 +88,10 @@ import {
 import {
     useAspect,
     useTexture,
-    //@ts-ignore
+//@ts-ignore
 } from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/react-three-drei-bundle/dist/bundle.js"
 
 import {
-    bloom,
     pass,
     abs,
     blendScreen,
@@ -100,9 +99,10 @@ import {
     Fn,
     max,
     mod,
-    mx_cell_noise_float,
+    bloom,
     oneMinus,
     select,
+    mx_cell_noise_float,
     ShaderNode,
     smoothstep,
     sub,
@@ -428,33 +428,55 @@ export default function ThreeDScanEffectGood(props: {
                     console.log("✅ Depth map loaded for reading")
                 }
 
-                // Sample depth values across the scan line
+                // PHASE 2: Depth-based scanning logic (comparing depth with progress)
+                console.log("🧪 PHASE 2: Testing depth-based scanning logic...")
+                
                 const scanPosition = progress * canvas.height
-                const sampleStep = 8 // Sample every 8 pixels
+                const sampleStep = 4 // More precise sampling
+                const tolerance = 0.05 // How close depth needs to be to progress
                 
                 for (let x = 0; x < canvas.width; x += sampleStep) {
                     try {
                         // Convert canvas coordinates to depth map coordinates
                         const depthX = Math.floor((x / canvas.width) * tempCanvas.width)
-                        const depthY = Math.floor((scanPosition / canvas.height) * tempCanvas.height)
                         
-                        // Read depth value
-                        const imageData = tempCtx.getImageData(depthX, depthY, 1, 1)
-                        const depthValue = imageData.data[0] / 255 // Normalize to 0-1
+                        // Search for the best depth match along the Y axis
+                        let bestMatch = scanPosition
+                        let bestDifference = Infinity
                         
-                        // Simple depth-based offset (Phase 1 test)
-                        const depthOffset = (depthValue - 0.5) * 20 // Small offset for testing
-                        const adjustedY = scanPosition + depthOffset
+                        // Search around the current scan position
+                        const searchRange = 50 // pixels to search up/down
+                        for (let y = Math.max(0, scanPosition - searchRange); 
+                             y <= Math.min(canvas.height, scanPosition + searchRange); 
+                             y += 2) {
+                            
+                            const depthY = Math.floor((y / canvas.height) * tempCanvas.height)
+                            const imageData = tempCtx.getImageData(depthX, depthY, 1, 1)
+                            const depthValue = imageData.data[0] / 255 // Normalize to 0-1
+                            
+                            // Calculate how close this depth is to our current progress
+                            const progressDifference = Math.abs(depthValue - progress)
+                            
+                            if (progressDifference < bestDifference) {
+                                bestDifference = progressDifference
+                                bestMatch = y
+                            }
+                        }
                         
-                        // Draw scanning line segment at adjusted position
-                        if (adjustedY >= 0 && adjustedY < canvas.height) {
-                            ctx.fillStyle = `rgba(${r * 100}, ${g * 100}, ${b * 100}, ${intensity * 1.0})`
-                            ctx.fillRect(x, adjustedY - 1, sampleStep, 2)
+                        // Only draw if we found a good match
+                        if (bestDifference < tolerance) {
+                            // Draw scanning line segment at the depth-matched position
+                            ctx.fillStyle = `rgba(${r * 100}, ${g * 100}, ${b * 100}, ${intensity * 1.2})`
+                            ctx.fillRect(x, bestMatch - 2, sampleStep, 4)
+                            
+                            // Add glow effect
+                            ctx.fillStyle = `rgba(${r * 60}, ${g * 60}, ${b * 60}, ${intensity * 0.6})`
+                            ctx.fillRect(x, bestMatch - 6, sampleStep, 12)
                         }
                         
                         // Log first few values for debugging
                         if (x < 50) {
-                            console.log(`Depth at x=${x}: value=${depthValue.toFixed(3)}, offset=${depthOffset.toFixed(1)}`)
+                            console.log(`Phase 2 - x=${x}: depth=${bestDifference.toFixed(3)}, match=${bestMatch.toFixed(0)}`)
                         }
                     } catch (error) {
                         console.warn("Failed to read depth at x=" + x, error)
@@ -502,18 +524,18 @@ export default function ThreeDScanEffectGood(props: {
             // This mimics CSS object-fit: cover behavior
             const containerAspect = 1 // Canvas default viewport is square (-1 to 1)
             const imageAspect = WIDTH / HEIGHT // 1600/900 = 1.78
-
+            
             let scaleX, scaleY
             if (imageAspect > containerAspect) {
                 // Image is wider than container - scale to fill height
                 scaleY = 2 // Fill the full height (-1 to 1 = 2 units)
                 scaleX = scaleY * imageAspect
             } else {
-                // Image is taller than container - scale to fill width
+                // Image is taller than container - scale to fill width  
                 scaleX = 2 // Fill the full width (-1 to 1 = 2 units)
                 scaleY = scaleX / imageAspect
             }
-
+            
             const scale = [scaleX, scaleY, 1] as [number, number, number]
 
             // Load textures using manual TextureLoader (safe for Framer)
@@ -589,7 +611,7 @@ export default function ThreeDScanEffectGood(props: {
                     depthMap={depthMap} 
                     controls={controls} 
                     progress={progress} 
-                    scale={scale} 
+                            scale={scale}
                 />
             )
         }
@@ -1911,7 +1933,7 @@ export default function ThreeDScanEffectGood(props: {
                         <div
                             style={{
                                 position: "relative",
-
+                            
                                 width: "15%",
                                 height: "15%",
                                 backgroundColor: "#1a1a1a",

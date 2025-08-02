@@ -1,9 +1,9 @@
 /**
  * 3D Scanning Effect with Mouse Control
- * 
+ *
  * This component creates a 3D scanning effect that responds to mouse position.
  * The scanning effect progresses from top to bottom as the mouse moves down the page.
- * 
+ *
  * Key Concepts:
  * - Three.js/React Three Fiber: 3D graphics library for web
  * - Shaders: GPU code that processes each pixel (written in TSL - Three.js Shader Language)
@@ -11,21 +11,27 @@
  * - useFrame: Hook that runs every frame (60fps) for animations
  * - useTexture: Hook that loads image textures asynchronously
  * - useMemo: React hook for performance optimization
- * 
+ *
  * The effect uses:
  * - A depth map to create 3D-like displacement
  * - A noise pattern for the scanning dots
  * - Mouse position to control scanning progress
  * - Framer Motion for smooth animations
- * 
+ *
  * Combined Effects:
  * - Effect1: Original dot/line scanning with mouse control
  * - Effect2: Edge detection neon effect
  * - Effect3: Cross pattern scanning effect
+ * 
+ * @framerSupportedLayoutWidth any-prefer-fixed
+ * @framerSupportedLayoutHeight any-prefer-fixed
+ * @framerIntrinsicWidth 1600
+ * @framerIntrinsicHeight 900
+ * @framerDisableUnlink
  */
 
 
-import { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { motion, useAnimation, useMotionValue } from 'framer-motion';
 
 //-----------------------------------
@@ -33,73 +39,53 @@ import { motion, useAnimation, useMotionValue } from 'framer-motion';
 //-----------------------------------
 
 
-//Local development imports (for testing in Next.js)
-import { useAspect, useTexture } from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/react-three-drei-bundle/dist/bundle.js";
-import { useFrame, Canvas, useThree, extend } from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/react-three-fiber-bundle/dist/bundle.js";
+//FOR FRAMER: Import from bundles
+import {
+    THREE,
+    WebGPURenderer,
+    MeshBasicNodeMaterial,
+    PostProcessing,
+} from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/three-core-bundle/dist/bundle.js"
 
 import {
-  abs,
-  blendScreen,
-  float,
-  Fn,
-  max,
-  mod,
-  mx_cell_noise_float,
-  oneMinus,
-  select,
-  ShaderNode,
-  smoothstep,
-  sub,
-  texture,
-  uniform,
-  uv,
-  vec2,
-  vec3,
-  pass,
-  bloom
-} from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/three-tsl-bundle/dist/bundle.js";
+    useFrame,
+    Canvas,
+    useThree,
+    extend,
+} from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/react-three-fiber-bundle/dist/bundle.js"
 
-import * as THREE from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/three-core-bundle/dist/bundle.js";
+import {
+    useAspect,
+    useTexture,
+} from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/react-three-drei-bundle/dist/bundle.js"
 
-// Extend THREE with WebGPU components
-extend(THREE as any);
+import {
+    bloom,
+    pass,
+    abs,
+    blendScreen,
+    float,
+    Fn,
+    max,
+    mod,
+    mx_cell_noise_float,
+    oneMinus,
+    select,
+    ShaderNode,
+    smoothstep,
+    sub,
+    texture,
+    uniform,
+    uv,
+    vec2,
+    vec3,
+} from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/three-tsl-bundle/dist/bundle.js"
 
-//-----------------------------------
-//FOR FRAMER: Use this import instead of the individual imports above
-//-----------------------------------
-// import {
-//   THREE,
-//   useAspect,
-//   useTexture,
-//   useFrame,
-//   Canvas,
-//   useThree,
-//   bloom,
-//   pass,
-//   abs,
-//   blendScreen,
-//   float,
-//   Fn,
-//   max,
-//   mod,
-//   mx_cell_noise_float,
-//   oneMinus,
-//   select,
-//   ShaderNode,
-//   smoothstep,
-//   sub,
-//   texture,
-//   uniform,
-//   uv,
-//   vec2,
-//   vec3,
-// } from "https://raw.githubusercontent.com/Emanuele-Webtales/npm-bundles/main/3D-scan-bundle/dist/bundle.js";
 
 //-----------------------------------
-//
+// Import Framer Property Controls
 //-----------------------------------
-import TEXTUREMAP from '@/app/3D-scan/3D-scan-assets/raw-1.png';
-import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/depth-1.png';
+import { addPropertyControls, ControlType } from "framer";
 
 // Font definition - currently unused but kept for potential future use
 // const tomorrow = Tomorrow({
@@ -231,20 +217,67 @@ const PostProcessing = ({
 // This component handles the Three.js material creation and uniform updates
 const Scene = ({ 
 	progress, 
-	controls 
+	controls,
+	textureMap,
+	depthMap
 }: { 
 	progress: number;
 	controls: DebugControls;
+	textureMap?: any;
+	depthMap?: any;
 }) => {
 	const [isLoading, setIsLoading] = useState(true);
+	const [rawMap, setRawMap] = useState<any>(null);
+	const [depthTexture, setDepthTexture] = useState<any>(null);
 
-	// useTexture is a React Three Fiber hook that loads textures asynchronously
-	// It returns an array of textures and a callback when loading is complete
-	const [rawMap, depthMap] = useTexture([TEXTUREMAP.src, DEPTHMAP.src], () => {
-		setIsLoading(false);
-		// Set the color space for proper color rendering
-		rawMap.colorSpace = THREE.SRGBColorSpace;
-	});
+	// Manual texture loading to avoid useTexture hook issues
+	useEffect(() => {
+		const loader = new THREE.TextureLoader();
+		let loadedCount = 0;
+		const totalTextures = 2;
+		
+		const checkAllLoaded = () => {
+			loadedCount++;
+			if (loadedCount === totalTextures) {
+				setIsLoading(false);
+			}
+		};
+		
+		if (textureMap?.src) {
+			loader.load(textureMap.src, (texture: any) => {
+				texture.colorSpace = THREE.SRGBColorSpace;
+				setRawMap(texture);
+				checkAllLoaded();
+			}, undefined, (error: any) => {
+				console.error('Error loading texture map:', error);
+				checkAllLoaded();
+			});
+		} else {
+			checkAllLoaded();
+		}
+		
+		if (depthMap?.src) {
+			loader.load(depthMap.src, (texture: any) => {
+				setDepthTexture(texture);
+				checkAllLoaded();
+			}, undefined, (error: any) => {
+				console.error('Error loading depth map:', error);
+				checkAllLoaded();
+			});
+		} else {
+			checkAllLoaded();
+		}
+	}, [textureMap?.src, depthMap?.src]);
+
+	// Return early if textures aren't loaded yet or required textures are missing
+	if (!rawMap || !depthTexture) {
+		return (
+			<mesh>
+				<planeGeometry />
+				<meshBasicMaterial color={isLoading ? "gray" : "black"} />
+			</mesh>
+		);
+	}
 
 	// useMemo is used to create the material and uniforms only when dependencies change
 	// This is important for performance in Three.js applications
@@ -258,7 +291,7 @@ const Scene = ({
 		const strength = 0.01; // TODO: Make this configurable in UI
 
 		// Create texture nodes from the maps
-		const tDepthMap = texture(depthMap);
+		const tDepthMap = texture(depthTexture);
 
 		// Create the main texture with displacement based on depth
 		// uv() gives us the current pixel coordinates (0-1 range)
@@ -371,11 +404,11 @@ const Scene = ({
 				uProgress,
 			},
 		};
-	}, [rawMap, depthMap, controls]); // Updated dependencies
+	}, [rawMap, depthTexture, controls]); // Updated dependencies
 
-	// useAspect calculates the proper scale to maintain aspect ratio
-	// This ensures the effect looks correct on different screen sizes
-	const [w, h] = useAspect(WIDTH, HEIGHT);
+	// Manual aspect calculation to avoid useAspect hook
+	const aspect = WIDTH / HEIGHT;
+	const [w, h] = [aspect, 1];
 
 	// useFrame is a React Three Fiber hook that runs every frame (60fps)
 	// This is where we update the uniforms based on mouse position
@@ -829,7 +862,7 @@ const DebugPanel = ({
 
 // Html component that handles the UI layout and mouse tracking
 // This component manages the overall page structure and mouse interactions
-const Html = () => {
+const Html = ({ textureMap, depthMap, style }: { textureMap?: any; depthMap?: any; style?: React.CSSProperties }) => {
 	const [isLoading, setIsLoading] = useState(true);
 	const isMobile = useIsMobile();
 	
@@ -1075,12 +1108,15 @@ const Html = () => {
 
 	return (
 		<div style={{
+			...style,
 			display: 'flex',
 			backgroundColor: '#78716C',
 			flexDirection: 'column',
 			alignItems: 'center',
 			justifyContent: 'center',
-			height: '100vh'
+			width: '100%',
+			height: '100%',
+			minHeight: '400px'
 		}}>
 			{/* Hidden motion div to track loop animation progress */}
 			<motion.div
@@ -1092,13 +1128,6 @@ const Html = () => {
 					}
 				}}
 			/>
-			{/* Loading overlay */}
-			{/* <div
-				className="h-svh fixed z-90 bg-yellow-900 pointer-events-none w-full flex justify-center items-center"
-				data-loader
-			>
-				<div className="w-6 h-6 bg-white animate-ping rounded-full"></div>
-			</div> */}
 			
 			{/* Debug Controls Panel */}
 			<DebugPanel controls={controls} setControls={setControls} />
@@ -1109,8 +1138,10 @@ const Html = () => {
 					borderRadius: '1.5rem',
 					overflow: 'hidden',
 					position: 'relative',
-					width: '60%',
-					height: '60%'
+					width: '100%',
+					height: '100%',
+					maxWidth: '1600px',
+					maxHeight: '900px'
 				}}
 				ref={containerRef}
 				onMouseMove={handleMouseMove}
@@ -1123,7 +1154,7 @@ const Html = () => {
 				<WebGPUCanvas>
 					<PostProcessing />
 					{/* Pass the progress value and controls to the Scene component */}
-					<Scene progress={progress} controls={controls} />
+					<Scene progress={progress} controls={controls} textureMap={textureMap} depthMap={depthMap} />
 				</WebGPUCanvas>
 				
 				{/* Debug indicator - shows current progress value */}
@@ -1159,8 +1190,27 @@ const Html = () => {
 	);
 };
 
-export default function Home() {
+export default function ThreeDScanEffect(props: {
+	textureMap?: any;
+	depthMap?: any;
+	style?: React.CSSProperties;
+}) {
+	const { textureMap, depthMap, style } = props;
 	return (
-		<Html />
+		<Html textureMap={textureMap} depthMap={depthMap} style={style} />
 	);
 }
+
+// Add Property Controls for Framer
+addPropertyControls(ThreeDScanEffect, {
+	textureMap: {
+		type: ControlType.ResponsiveImage,
+		title: "Texture Map",
+		description: "The main texture image for the 3D scan effect"
+	},
+	depthMap: {
+		type: ControlType.ResponsiveImage,
+		title: "Depth Map",
+		description: "The depth map image that controls the 3D displacement effect"
+	}
+});

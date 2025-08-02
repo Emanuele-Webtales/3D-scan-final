@@ -62,8 +62,6 @@ import {
 
 import * as THREE from 'three/webgpu';
 
-// Extend THREE with WebGPU components
-extend(THREE as any);
 
 //-----------------------------------
 //FOR FRAMER: Use this import instead of the individual imports above

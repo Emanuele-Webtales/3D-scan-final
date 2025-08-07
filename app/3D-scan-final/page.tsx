@@ -81,6 +81,76 @@ addPropertyControls(Home, {
         optionTitles: ["Gradient Line", "Dots"],
         defaultValue: "gradient",
     },
+    dotSize: {
+        type: ControlType.Number,
+        title: "Dot Size",
+        description: "Size of the dots when using dots effect",
+        min: 0.01,
+        max: 2.0,
+        step: 0.01,
+        defaultValue: 0.1,
+        hidden: (props) => props.effectType !== "dots",
+    },
+    tilingScale: {
+        type: ControlType.Number,
+        title: "Tiling Scale",
+        description: "Number of dots tiled across the surface",
+        min: 20,
+        max: 200,
+        step: 10,
+        defaultValue: 50,
+        hidden: (props) => props.effectType !== "dots",
+    },
+    gradientWidth: {
+        type: ControlType.Number,
+        title: "Line Width",
+        description: "Width of the gradient line effect",
+        min: 0.0,
+        max: 5.0,
+        step: 0.1,
+        defaultValue: 0.5,
+        hidden: (props) => props.effectType !== "gradient",
+    },
+    intensity: {
+        type: ControlType.Number,
+        title: "Intensity",
+        description: "Intensity/brightness of the effect",
+        min: 0.0,
+        max: 5.0,
+        step: 0.1,
+        defaultValue: 1.0,
+    },
+    bloomStrength: {
+        type: ControlType.Number,
+        title: "Bloom Strength",
+        description: "Strength of the bloom glow effect",
+        min: 0.0,
+        max: 1.0,
+        step: 0.01,
+        defaultValue: 0.15,
+    },
+    bloomRadius: {
+        type: ControlType.Number,
+        title: "Bloom Radius",
+        description: "Radius of the bloom glow effect",
+        min: 0.0001,
+        max: 0.01,
+        step: 0.0001,
+        defaultValue: 0.001,
+    },
+    showTexture: {
+        type: ControlType.Boolean,
+        title: "Show Background Image",
+        description: "Show the texture image as background",
+        defaultValue: true,
+    },
+    backgroundColor: {
+        type: ControlType.Color,
+        title: "Background Color",
+        description: "Background color when texture is hidden",
+        defaultValue: "#000000",
+        hidden: (props) => props.showTexture ?? true,
+    },
     loopEnabled: {
         type: ControlType.Boolean,
         title: "Loop Animation",
@@ -208,49 +278,15 @@ export const PostProcessing = ({
     return null
 }
 
-// UI Controls Component
+// UI Controls Component - now only for debugging/development
 interface UIControlsProps {
-    dotSize: number
-    setDotSize: (value: number) => void
-    tilingScale: number
-    setTilingScale: (value: number) => void
     isVisible: boolean
     setIsVisible: (value: boolean) => void
-    effectType: "dots" | "gradient"
-    gradientWidth: number
-    setGradientWidth: (value: number) => void
-    gradientIntensity: number
-    setGradientIntensity: (value: number) => void
-    bloomStrength: number
-    setBloomStrength: (value: number) => void
-    bloomRadius: number
-    setBloomRadius: (value: number) => void
-    showTexture: boolean
-    setShowTexture: (value: boolean) => void
-    backgroundColor: string
-    setBackgroundColor: (value: string) => void
 }
 
 const UIControls = ({
-    dotSize,
-    setDotSize,
-    tilingScale,
-    setTilingScale,
     isVisible,
     setIsVisible,
-    effectType,
-    gradientWidth,
-    setGradientWidth,
-    gradientIntensity,
-    setGradientIntensity,
-    bloomStrength,
-    setBloomStrength,
-    bloomRadius,
-    setBloomRadius,
-    showTexture,
-    setShowTexture,
-    backgroundColor,
-    setBackgroundColor,
 }: UIControlsProps) => {
     if (!isVisible) return null
 
@@ -274,162 +310,12 @@ const UIControls = ({
             }}
         >
             <h3 style={{ margin: "0 0 15px 0", fontSize: "16px" }}>
-                Shader Controls
+                Development Controls
             </h3>
-
-            {effectType === "dots" && (
-                <>
-                    <div style={{ marginBottom: "15px" }}>
-                        <label
-                            style={{ display: "block", marginBottom: "5px" }}
-                        >
-                            Dot Size: {dotSize.toFixed(2)}
-                        </label>
-                        <input
-                            type="range"
-                            min="0.1"
-                            max="2.0"
-                            step="0.1"
-                            value={dotSize}
-                            onChange={(e) =>
-                                setDotSize(parseFloat(e.target.value))
-                            }
-                            style={{ width: "100%" }}
-                        />
-                    </div>
-
-                    <div style={{ marginBottom: "15px" }}>
-                        <label
-                            style={{ display: "block", marginBottom: "5px" }}
-                        >
-                            Tiling Scale: {tilingScale.toFixed(0)}
-                        </label>
-                        <input
-                            type="range"
-                            min="20"
-                            max="200"
-                            step="10"
-                            value={tilingScale}
-                            onChange={(e) =>
-                                setTilingScale(parseInt(e.target.value))
-                            }
-                            style={{ width: "100%" }}
-                        />
-                    </div>
-                </>
-            )}
-
-            {effectType === "gradient" && (
-                <>
-                    <div style={{ marginBottom: "15px" }}>
-                        <label
-                            style={{ display: "block", marginBottom: "5px" }}
-                        >
-                            Gradient Width: {gradientWidth.toFixed(2)}
-                        </label>
-                        <input
-                            type="range"
-                            min="0.0"
-                            max="5.0"
-                            step="0.1"
-                            value={gradientWidth}
-                            onChange={(e) =>
-                                setGradientWidth(parseFloat(e.target.value))
-                            }
-                            style={{ width: "100%" }}
-                        />
-                    </div>
-
-                    <div style={{ marginBottom: "15px" }}>
-                        <label
-                            style={{ display: "block", marginBottom: "5px" }}
-                        >
-                            Gradient Intensity: {gradientIntensity.toFixed(2)}
-                        </label>
-                        <input
-                            type="range"
-                            min="0.0"
-                            max="5.0"
-                            step="0.1"
-                            value={gradientIntensity}
-                            onChange={(e) =>
-                                setGradientIntensity(parseFloat(e.target.value))
-                            }
-                            style={{ width: "100%" }}
-                        />
-                    </div>
-
-                    <div style={{ marginBottom: "15px" }}>
-                        <label
-                            style={{ display: "block", marginBottom: "5px" }}
-                        >
-                            Bloom Strength: {bloomStrength.toFixed(3)}
-                        </label>
-                        <input
-                            type="range"
-                            min="0.0"
-                            max="1.0"
-                            step="0.01"
-                            value={bloomStrength}
-                            onChange={(e) =>
-                                setBloomStrength(parseFloat(e.target.value))
-                            }
-                            style={{ width: "100%" }}
-                        />
-                    </div>
-
-                    <div style={{ marginBottom: "15px" }}>
-                        <label
-                            style={{ display: "block", marginBottom: "5px" }}
-                        >
-                            Bloom Radius: {bloomRadius.toFixed(4)}
-                        </label>
-                        <input
-                            type="range"
-                            min="0.0001"
-                            max="0.01"
-                            step="0.0001"
-                            value={bloomRadius}
-                            onChange={(e) =>
-                                setBloomRadius(parseFloat(e.target.value))
-                            }
-                            style={{ width: "100%" }}
-                        />
-                    </div>
-                </>
-            )}
-
-            <div style={{ marginBottom: "15px" }}>
-                <label
-                    style={{
-                        display: "flex",
-                        alignItems: "center",
-                        marginBottom: "5px",
-                    }}
-                >
-                    <input
-                        type="checkbox"
-                        checked={showTexture}
-                        onChange={(e) => setShowTexture(e.target.checked)}
-                        style={{ marginRight: "8px" }}
-                    />
-                    Show Texture Image
-                </label>
-            </div>
-
-            {!showTexture && (
-                <div style={{ marginBottom: "15px" }}>
-                    <label style={{ display: "block", marginBottom: "5px" }}>
-                        Background Color:
-                    </label>
-                    <input
-                        type="color"
-                        value={backgroundColor}
-                        onChange={(e) => setBackgroundColor(e.target.value)}
-                        style={{ width: "100%", height: "30px" }}
-                    />
-                </div>
-            )}
+            
+            <p style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.7)", margin: "0 0 15px 0" }}>
+                All effect controls are now available in Framer's property panel. This panel is for development only.
+            </p>
 
 
 
@@ -459,7 +345,7 @@ interface SceneProps {
     tilingScale: number
     effectType: "dots" | "gradient"
     gradientWidth: number
-    gradientIntensity: number
+    intensity: number
     bloomStrength: number
     bloomRadius: number
     showTexture: boolean
@@ -473,7 +359,7 @@ const Scene = ({
     tilingScale,
     effectType,
     gradientWidth,
-    gradientIntensity,
+    intensity,
     bloomStrength,
     bloomRadius,
     showTexture,
@@ -510,27 +396,27 @@ const Scene = ({
 
     // Memoized color conversion - only recalculates when dotColor changes
     const rgbColor = useMemo(() => {
-        const hexToRgb = (hex: string) => {
-            // Handle rgb() format
-            const rgbMatch = hex.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
-            if (rgbMatch) {
+    const hexToRgb = (hex: string) => {
+        // Handle rgb() format
+        const rgbMatch = hex.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
+        if (rgbMatch) {
                 return {
-                    r: parseInt(rgbMatch[1]) / 255,
-                    g: parseInt(rgbMatch[2]) / 255,
-                    b: parseInt(rgbMatch[3]) / 255,
-                }
+                r: parseInt(rgbMatch[1]) / 255,
+                g: parseInt(rgbMatch[2]) / 255,
+                b: parseInt(rgbMatch[3]) / 255,
             }
-            
-            // Handle hex format
-            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
-            return result
-                ? {
-                      r: parseInt(result[1], 16) / 255,
-                      g: parseInt(result[2], 16) / 255,
-                      b: parseInt(result[3], 16) / 255,
-                  }
-                : { r: 1, g: 0, b: 0 }
         }
+        
+        // Handle hex format
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+            return result
+            ? {
+                  r: parseInt(result[1], 16) / 255,
+                  g: parseInt(result[2], 16) / 255,
+                  b: parseInt(result[3], 16) / 255,
+              }
+            : { r: 1, g: 0, b: 0 }
+    }
         
         return hexToRgb(dotColor || "#00ff00")
     }, [dotColor])
@@ -556,11 +442,11 @@ const Scene = ({
         uProgress: { value: 0 },
         uDepthMap: { value: null as any },
         uColor: { value: new Vector3(0, 1, 0) },
-        uEffectType: { value: 0.0 },
+        uEffectType: { value: effectType === "dots" ? 0.0 : 1.0 }, // Initialize with correct effect type
         uDotSize: { value: dotSize },
         uTilingScale: { value: tilingScale },
         uGradientWidth: { value: gradientWidth },
-        uGradientIntensity: { value: gradientIntensity },
+        uIntensity: { value: intensity }, // Renamed from uGradientIntensity
         uBloomStrength: { value: bloomStrength },
         uBloomRadius: { value: bloomRadius },
     })
@@ -575,14 +461,35 @@ const Scene = ({
         dotSize: -1,
         tilingScale: -1,
         gradientWidth: -1,
-        gradientIntensity: -1,
+        intensity: -1, // Renamed from gradientIntensity
         bloomStrength: -1,
         bloomRadius: -1,
     })
 
+    // Initialize uniforms properly for both canvas and live environments
+    useEffect(() => {
+        const effectTypeValue = effectType === "dots" ? 0.0 : 1.0
+        
+        // Set initial uniforms - this ensures canvas environment shows correct values
+        uniformsRef.current.uProgress.value = progress
+        uniformsRef.current.uColor.value.set(rgbColor.r, rgbColor.g, rgbColor.b)
+        uniformsRef.current.uEffectType.value = effectTypeValue
+        uniformsRef.current.uDotSize.value = dotSize
+        uniformsRef.current.uTilingScale.value = tilingScale
+        uniformsRef.current.uGradientWidth.value = gradientWidth
+        uniformsRef.current.uIntensity.value = intensity
+        uniformsRef.current.uBloomStrength.value = bloomStrength
+        uniformsRef.current.uBloomRadius.value = bloomRadius
+        
+        if (depthMapTexture) {
+            uniformsRef.current.uDepthMap.value = depthMapTexture
+        }
+    }, [progress, rgbColor, effectType, dotSize, tilingScale, gradientWidth, intensity, bloomStrength, bloomRadius, depthMapTexture])
+
     // Update uniforms for the effects shader - optimized to only update when values change
     useFrame(() => {
-        // Skip rendering in canvas environment for performance
+        // For canvas environment, we already handle updates via useEffect above
+        // For live environment, we need frame-by-frame updates for smooth animations
         if (RenderTarget.current() === RenderTarget.canvas) {
             return
         }
@@ -592,12 +499,12 @@ const Scene = ({
 
         // Only update uniforms that have actually changed
         if (prev.progress !== progress) {
-            uniformsRef.current.uProgress.value = progress
+        uniformsRef.current.uProgress.value = progress
             prev.progress = progress
         }
 
         if (prev.dotColor !== dotColor) {
-            uniformsRef.current.uColor.value.set(rgbColor.r, rgbColor.g, rgbColor.b)
+        uniformsRef.current.uColor.value.set(rgbColor.r, rgbColor.g, rgbColor.b)
             prev.dotColor = dotColor
         }
 
@@ -607,32 +514,32 @@ const Scene = ({
         }
 
         if (prev.dotSize !== dotSize) {
-            uniformsRef.current.uDotSize.value = dotSize
+        uniformsRef.current.uDotSize.value = dotSize
             prev.dotSize = dotSize
         }
 
         if (prev.tilingScale !== tilingScale) {
-            uniformsRef.current.uTilingScale.value = tilingScale
+        uniformsRef.current.uTilingScale.value = tilingScale
             prev.tilingScale = tilingScale
         }
 
-        if (prev.gradientWidth !== gradientWidth) {
+                if (prev.gradientWidth !== gradientWidth) {
             uniformsRef.current.uGradientWidth.value = gradientWidth
             prev.gradientWidth = gradientWidth
         }
 
-        if (prev.gradientIntensity !== gradientIntensity) {
-            uniformsRef.current.uGradientIntensity.value = gradientIntensity
-            prev.gradientIntensity = gradientIntensity
+        if (prev.intensity !== intensity) {
+            uniformsRef.current.uIntensity.value = intensity
+            prev.intensity = intensity
         }
 
         if (prev.bloomStrength !== bloomStrength) {
-            uniformsRef.current.uBloomStrength.value = bloomStrength
+        uniformsRef.current.uBloomStrength.value = bloomStrength
             prev.bloomStrength = bloomStrength
         }
 
         if (prev.bloomRadius !== bloomRadius) {
-            uniformsRef.current.uBloomRadius.value = bloomRadius
+        uniformsRef.current.uBloomRadius.value = bloomRadius
             prev.bloomRadius = bloomRadius
         }
 
@@ -679,7 +586,7 @@ const Scene = ({
             uniform float uDotSize;
             uniform float uTilingScale;
             uniform float uGradientWidth;
-            uniform float uGradientIntensity;
+            uniform float uIntensity;
             uniform float uBloomStrength;
             uniform float uBloomRadius;
             varying vec2 vUv;
@@ -693,7 +600,7 @@ const Scene = ({
               // Use the exact working formula from reference-code.tsx
               float flow = 1.0 - smoothstep(0.0, 0.02, abs(depth - uProgress));
               
-              // For dots effect
+              // For dots effect - only render if explicitly in dots mode
               if (uEffectType < 0.5) {
                 // Create tiled UV for dots
                 vec2 aspect = vec2(1600.0 / 900.0, 1.0);
@@ -705,8 +612,24 @@ const Scene = ({
                 float dist = length(tiledUv);
                 float dot = smoothstep(0.5, 0.49, dist);
                 
-                // Combine dots with flow
-                float final = dot * flow;
+                // Combine dots with flow, scale by dot size for better control
+                float dotEffect = dot * flow * uDotSize;
+                
+                // Apply bloom effect to dots
+                float bloomSize = uBloomRadius * 100.0;
+                float dotBloom = 0.0;
+                
+                // Core bloom for dots
+                float coreBloom = dot * flow * uBloomStrength;
+                // Medium bloom - slightly larger area
+                float mediumBloom = smoothstep(0.7, 0.3, dist) * flow * uBloomStrength * 0.6;
+                // Outer bloom - largest area
+                float outerBloom = smoothstep(0.9, 0.1, dist) * flow * uBloomStrength * 0.3;
+                
+                dotBloom = max(max(coreBloom, mediumBloom), outerBloom);
+                
+                // Combine dot effect with bloom and apply intensity
+                float final = max(dotEffect, dotBloom) * uIntensity;
                 gl_FragColor = vec4(uColor * final, final);
               } else {
                 // For gradient line effect - high quality implementation from reference-code-old.tsx
@@ -758,14 +681,14 @@ const Scene = ({
                 bloom = max(max(coreBloom, mediumBloom), outerBloom);
                 
                 // Intensity-based boost - stronger intensity creates more bloom
-                float intensityBoost = uGradientIntensity * 0.5;
+                float intensityBoost = uIntensity * 0.5;
                 bloom *= (1.0 + intensityBoost);
                 
                 // Combine main line with bloom
                 float finalOpacity = max(opacity, bloom);
                 
                 // Apply color and intensity
-                gl_FragColor = vec4(uColor * finalOpacity * uGradientIntensity, finalOpacity);
+                gl_FragColor = vec4(uColor * finalOpacity * uIntensity, finalOpacity);
               }
             }
           `}
@@ -781,6 +704,14 @@ const Html = ({
     depthMap,
     dotColor,
     effectType: propEffectType,
+    dotSize: propDotSize,
+    tilingScale: propTilingScale,
+    gradientWidth: propGradientWidth,
+    intensity: propIntensity,
+    bloomStrength: propBloomStrength,
+    bloomRadius: propBloomRadius,
+    showTexture: propShowTexture,
+    backgroundColor: propBackgroundColor,
     loopEnabled: propLoopEnabled,
     loopType: propLoopType,
     loopDuration: propLoopDuration,
@@ -792,6 +723,14 @@ const Html = ({
     depthMap?: any
     dotColor?: string
     effectType?: "dots" | "gradient"
+    dotSize?: number
+    tilingScale?: number
+    gradientWidth?: number
+    intensity?: number
+    bloomStrength?: number
+    bloomRadius?: number
+    showTexture?: boolean
+    backgroundColor?: string
     loopEnabled?: boolean
     loopType?: "oneShot" | "repeat" | "mirror"
     loopDuration?: number
@@ -806,16 +745,19 @@ const Html = ({
 
     // Debug logs removed for performance
 
-    const [dotSize, setDotSize] = useState(0.1)
-    const [tilingScale, setTilingScale] = useState(2.0)
+    // Effect-related props with defaults
+    const dotSize = propDotSize ?? 0.1
+    const tilingScale = propTilingScale ?? 50
+    const effectType = propEffectType ?? "gradient"
+    const gradientWidth = propGradientWidth ?? 0.5
+    const intensity = propIntensity ?? 1.0 // Renamed from gradientIntensity
+    const bloomStrength = propBloomStrength ?? 0.15
+    const bloomRadius = propBloomRadius ?? 0.001
+    const showTexture = propShowTexture ?? true
+    const backgroundColor = propBackgroundColor ?? "#000000"
+    
+    // UI state that remains as state (not exposed as property controls)
     const [isVisible, setIsVisible] = useState(true)
-    const effectType = propEffectType || "gradient"
-    const [gradientWidth, setGradientWidth] = useState(0.0)
-    const [gradientIntensity, setGradientIntensity] = useState(0.4)
-    const [bloomStrength, setBloomStrength] = useState(0.15)
-    const [bloomRadius, setBloomRadius] = useState(0.001)
-    const [showTexture, setShowTexture] = useState(true)
-    const [backgroundColor, setBackgroundColor] = useState("#000000")
 
     // Loop and hover props with defaults
     const loopEnabled = propLoopEnabled ?? false
@@ -1215,10 +1157,10 @@ const Html = ({
                     <Scene
                         dotSize={dotSize}
                         dotColor={dotColor || "#00ff00"}
-                        tilingScale={tilingScale || 2.0}
+                        tilingScale={tilingScale}
                         effectType={effectType}
                         gradientWidth={gradientWidth / 10}
-                        gradientIntensity={gradientIntensity}
+                        intensity={intensity}
                         bloomStrength={bloomStrength}
                         bloomRadius={bloomRadius}
                         showTexture={showTexture}
@@ -1298,25 +1240,8 @@ const Html = ({
 
                 {/* UI Controls */}
                 <UIControls
-                    dotSize={dotSize}
-                    setDotSize={setDotSize}
-                    tilingScale={tilingScale}
-                    setTilingScale={setTilingScale}
                     isVisible={isVisible}
                     setIsVisible={setIsVisible}
-                    effectType={effectType}
-                    gradientWidth={gradientWidth}
-                    setGradientWidth={setGradientWidth}
-                    gradientIntensity={gradientIntensity}
-                    setGradientIntensity={setGradientIntensity}
-                    bloomStrength={bloomStrength}
-                    setBloomStrength={setBloomStrength}
-                    bloomRadius={bloomRadius}
-                    setBloomRadius={setBloomRadius}
-                    showTexture={showTexture}
-                    setShowTexture={setShowTexture}
-                    backgroundColor={backgroundColor}
-                    setBackgroundColor={setBackgroundColor}
                 />
             </div>
         </div>
@@ -1328,6 +1253,14 @@ export default function Home(props: {
     depthMap?: any; 
     dotColor?: string; 
     effectType?: "dots" | "gradient";
+    dotSize?: number;
+    tilingScale?: number;
+    gradientWidth?: number;
+    intensity?: number;
+    bloomStrength?: number;
+    bloomRadius?: number;
+    showTexture?: boolean;
+    backgroundColor?: string;
     loopEnabled?: boolean;
     loopType?: "oneShot" | "repeat" | "mirror";
     loopDuration?: number;
@@ -1344,6 +1277,14 @@ export default function Home(props: {
                 depthMap={props.depthMap}
                 dotColor={props.dotColor}
                 effectType={props.effectType}
+                dotSize={props.dotSize}
+                tilingScale={props.tilingScale}
+                gradientWidth={props.gradientWidth}
+                intensity={props.intensity}
+                bloomStrength={props.bloomStrength}
+                bloomRadius={props.bloomRadius}
+                showTexture={props.showTexture}
+                backgroundColor={props.backgroundColor}
                 loopEnabled={props.loopEnabled}
                 loopType={props.loopType}
                 loopDuration={props.loopDuration}

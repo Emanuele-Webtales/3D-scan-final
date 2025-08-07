@@ -75,9 +75,24 @@ const ScrambledText = ({
       return scrambleChars[Math.floor(Math.random() * scrambleChars.length)];
     };
 
+    // Function to check if mouse is within radius of any character
+    const isMouseNearAnyChar = () => {
+      if (!rootRef.current) return false;
+      
+      return charsRef.current.some((char: Element) => {
+        const rect = char.getBoundingClientRect();
+        const charCenterX = rect.left + rect.width / 2;
+        const charCenterY = rect.top + rect.height / 2;
+        const dx = currentMousePosRef.current.x - charCenterX;
+        const dy = currentMousePosRef.current.y - charCenterY;
+        const dist = Math.hypot(dx, dy);
+        return dist < radius;
+      });
+    };
+
     // Time-based scrambling function that only updates the scrambled states
     const updateScrambledStates = () => {
-      if (!isMouseOverTextRef.current) return; // Only scramble when mouse is over text
+      if (!isMouseNearAnyChar()) return; // Only scramble when mouse is near any character
 
       charsRef.current.forEach((char: Element) => {
         const originalChar = char.getAttribute('data-content') || "";
@@ -95,6 +110,8 @@ const ScrambledText = ({
     const updateCharacterDisplay = () => {
       if (!rootRef.current) return;
 
+      const isNearAnyChar = isMouseNearAnyChar();
+      
       charsRef.current.forEach((char: Element) => {
         const rect = char.getBoundingClientRect();
         const charCenterX = rect.left + rect.width / 2;
@@ -103,7 +120,7 @@ const ScrambledText = ({
         const dy = currentMousePosRef.current.y - charCenterY;
         const dist = Math.hypot(dx, dy);
 
-        if (dist < radius && isMouseOverTextRef.current) {
+        if (dist < radius && isNearAnyChar) {
           // Show the scrambled state and set scramble color
           const scrambledChar = currentScrambledStates.current.get(char) || char.innerHTML;
           gsap.set(char, { 
@@ -119,10 +136,14 @@ const ScrambledText = ({
           });
         }
       });
+
+      // Update the visual state for the indicator
+      setIsMouseOverText(isNearAnyChar);
+      isMouseOverTextRef.current = isNearAnyChar;
     };
 
-    // Throttled mouse move handler using requestAnimationFrame
-    const handleMove = (e: PointerEvent) => {
+    // Global mouse move handler using requestAnimationFrame
+    const handleGlobalMove = (e: PointerEvent) => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
       }
@@ -131,46 +152,25 @@ const ScrambledText = ({
         currentMousePosRef.current = { x: e.clientX, y: e.clientY };
         setMousePos({ x: e.clientX, y: e.clientY });
         updateCharacterDisplay();
+        
+        // Start/stop scrambling based on proximity to characters
+        const isNearAnyChar = isMouseNearAnyChar();
+        if (isNearAnyChar && !scrambleIntervalRef.current) {
+          // Start scrambling interval when mouse gets near any character
+          scrambleIntervalRef.current = setInterval(updateScrambledStates, scrambleInterval);
+        } else if (!isNearAnyChar && scrambleIntervalRef.current) {
+          // Stop scrambling interval when mouse is far from all characters
+          clearInterval(scrambleIntervalRef.current);
+          scrambleIntervalRef.current = null;
+        }
       });
     };
 
-    // Mouse enter/leave handlers to control scrambling
-    const handleMouseEnter = () => {
-      isMouseOverTextRef.current = true;
-      setIsMouseOverText(true);
-      // Start scrambling interval when mouse enters
-      if (!scrambleIntervalRef.current) {
-        scrambleIntervalRef.current = setInterval(updateScrambledStates, scrambleInterval);
-      }
-    };
-
-    const handleMouseLeave = () => {
-      isMouseOverTextRef.current = false;
-      setIsMouseOverText(false);
-      // Stop scrambling interval when mouse leaves
-      if (scrambleIntervalRef.current) {
-        clearInterval(scrambleIntervalRef.current);
-        scrambleIntervalRef.current = null;
-      }
-      // Reset all characters to original state
-      charsRef.current.forEach((char: Element) => {
-        const originalChar = char.getAttribute('data-content') || "";
-        gsap.set(char, { 
-          innerHTML: originalChar,
-          color: color 
-        });
-      });
-    };
-
-    const el = rootRef.current;
-    el.addEventListener("pointermove", handleMove);
-    el.addEventListener("mouseenter", handleMouseEnter);
-    el.addEventListener("mouseleave", handleMouseLeave);
+    // Add global mouse move listener
+    document.addEventListener("pointermove", handleGlobalMove);
 
     return () => {
-      el.removeEventListener("pointermove", handleMove);
-      el.removeEventListener("mouseenter", handleMouseEnter);
-      el.removeEventListener("mouseleave", handleMouseLeave);
+      document.removeEventListener("pointermove", handleGlobalMove);
       
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);

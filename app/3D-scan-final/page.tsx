@@ -26,7 +26,7 @@ import {
     createContext,
     ReactNode,
 } from "react"
-import { motion, useAnimation, useMotionValue } from "framer-motion"
+import { animate } from "framer-motion"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
 
 const WIDTH = 1600
@@ -189,6 +189,7 @@ addPropertyControls(Home, {
                 type: ControlType.Transition,
                 title: "Timing",
                 defaultValue: {
+                    type: "tween",
                     duration: 3,
                     ease: "easeInOut",
                 },
@@ -750,11 +751,7 @@ const Html = ({
     loop?: {
         enabled?: boolean;
         type?: "oneShot" | "repeat" | "mirror";
-        transition?: {
-            duration?: number;
-            ease?: string;
-            delay?: number;
-        };
+        transition?: any; // Full Framer Motion transition object
     }
     hover?: {
         enabled?: boolean;
@@ -786,9 +783,11 @@ const Html = ({
     
     const loopEnabled = propLoop?.enabled ?? false
     const loopType = propLoop?.type ?? "repeat"
-    const loopDuration = propLoop?.transition?.duration ?? 3
-    const loopEasing = propLoop?.transition?.ease ?? "easeInOut"
-    const loopDelay = propLoop?.transition?.delay ?? 0
+    const loopTransition = propLoop?.transition ?? {
+        type: "tween",
+        duration: 3,
+        ease: "easeInOut",
+    }
     
     const hoverEnabled = propHover?.enabled ?? !isMobile
     const progressDirection = propHover?.direction ?? "topToBottom"
@@ -809,101 +808,100 @@ const Html = ({
     const [transitionStartTime, setTransitionStartTime] = useState(0)
 
     const containerRef = useRef<HTMLDivElement>(null)
-    const loopAnimation = useAnimation()
-    const loopProgressMotion = useMotionValue(0)
+    const animationControlsRef = useRef<any>(null)
 
-    // Convert GSAP easing to Framer Motion easing
-    const getEasing = (easing: string) => {
-        switch (easing) {
-            case "power2.inOut":
-                return "easeInOut"
-            case "power2.in":
-                return "easeIn"
-            case "power2.out":
-                return "easeOut"
-            case "power1.inOut":
-                return "easeInOut"
-            case "power1.in":
-                return "easeIn"
-            case "power1.out":
-                return "easeOut"
-            default:
-                return "easeInOut"
-        }
-    }
-
-    // Loop animation with Framer Motion
+    // Loop animation with Framer Motion animate function
     useEffect(() => {
         if (!loopEnabled) {
-            loopAnimation.stop()
+            if (animationControlsRef.current) {
+                animationControlsRef.current.stop()
+                animationControlsRef.current = null
+            }
             return
         }
 
         // Stop any existing animation
-        loopAnimation.stop()
+        if (animationControlsRef.current) {
+            animationControlsRef.current.stop()
+        }
 
-        const animateLoop = async () => {
+        const startLoop = () => {
             if (loopType === "oneShot") {
-                await loopAnimation.start({
-                    x: [0, 1],
-                    transition: {
-                        duration: loopDuration,
-                        ease: getEasing(loopEasing),
-                        delay: loopDelay,
+                animationControlsRef.current = animate(0, 1, {
+                    ...loopTransition,
+                    onUpdate: (latest) => {
+                        setLoopProgress(latest)
+                        // Only set the main progress if not hovering and not transitioning
+                        if (!isHovering && !isTransitioning) {
+                            setProgress(latest)
+                        }
                     },
                 })
             } else if (loopType === "repeat") {
-                await loopAnimation.start({
-                    x: [0, 1],
-                    transition: {
-                        duration: loopDuration,
-                        ease: getEasing(loopEasing),
-                        delay: loopDelay,
-                        repeat: Infinity,
-                        repeatType: "loop",
-                    },
-                })
+                const animateForward = () => {
+                    animationControlsRef.current = animate(0, 1, {
+                        ...loopTransition,
+                        onUpdate: (latest) => {
+                            setLoopProgress(latest)
+                            // Only set the main progress if not hovering and not transitioning
+                            if (!isHovering && !isTransitioning) {
+                                setProgress(latest)
+                            }
+                        },
+                        onComplete: () => {
+                            if (loopEnabled && loopType === "repeat") {
+                                animateForward() // Restart the animation
+                            }
+                        },
+                    })
+                }
+                animateForward()
             } else if (loopType === "mirror") {
-                // Use Framer Motion's built-in mirror repeat type
-                await loopAnimation.start({
-                    x: [0, 1, 0],
-                    transition: {
-                        duration: loopDuration * 2, // Double duration for full mirror cycle
-                        ease: getEasing(loopEasing),
-                        delay: loopDelay,
-                        repeat: Infinity,
-                        repeatType: "loop",
-                    },
-                })
+                let direction = 1 // 1 for forward, -1 for backward
+                let currentValue = 0
+                
+                const animateMirror = () => {
+                    const target = direction === 1 ? 1 : 0
+                    animationControlsRef.current = animate(currentValue, target, {
+                        ...loopTransition,
+                        onUpdate: (latest) => {
+                            currentValue = latest
+                            setLoopProgress(latest)
+                            // Only set the main progress if not hovering and not transitioning
+                            if (!isHovering && !isTransitioning) {
+                                setProgress(latest)
+                            }
+                        },
+                        onComplete: () => {
+                            if (loopEnabled && loopType === "mirror") {
+                                direction *= -1 // Reverse direction
+                                animateMirror() // Continue mirror animation
+                            }
+                        },
+                    })
+                }
+                animateMirror()
             }
         }
 
-        animateLoop()
+        startLoop()
 
         return () => {
-            loopAnimation.stop()
-        }
-    }, [loopEnabled, loopDuration, loopType, loopEasing, loopDelay])
-
-    // Update progress based on loop animation
-    useEffect(() => {
-        const unsubscribe = loopProgressMotion.on("change", (latest) => {
-            setLoopProgress(latest)
-            // Only set the main progress if not hovering and not transitioning
-            if (!isHovering && !isTransitioning) {
-                setProgress(latest)
+            if (animationControlsRef.current) {
+                animationControlsRef.current.stop()
+                animationControlsRef.current = null
             }
-        })
-
-        return unsubscribe
-    }, [loopProgressMotion, isHovering, isTransitioning])
+        }
+    }, [loopEnabled, loopType, loopTransition, isHovering, isTransitioning])
 
     // Handle hover state changes for loop animation control
     useEffect(() => {
         if (!loopEnabled) return
 
         if (isHovering && hoverEnabled && !isMobile) {
-            loopAnimation.stop()
+            if (animationControlsRef.current) {
+                animationControlsRef.current.stop()
+            }
         }
     }, [isHovering, hoverEnabled, loopEnabled, isMobile])
 
@@ -1006,7 +1004,9 @@ const Html = ({
             setTransitionStartProgress(progress)
             setTransitionStartTime(Date.now())
             // Pause the loop animation
-            loopAnimation.stop()
+            if (animationControlsRef.current) {
+                animationControlsRef.current.stop()
+            }
         }
     }
 
@@ -1017,56 +1017,36 @@ const Html = ({
         setIsTransitioning(false)
 
         if (loopEnabled) {
-            // First, complete the current cycle from hover-out position to 1
-            const remainingDuration = loopDuration * (1 - progress)
-
-            // Set the current position and animate to complete the cycle
-            loopAnimation.set({ x: progress })
-
             if (loopType === "oneShot") {
                 // For one shot, just complete to 1 and stop
-                loopAnimation.start({
-                    x: 1,
-                    transition: {
-                        duration: remainingDuration,
-                        ease: getEasing(loopEasing),
+                animationControlsRef.current = animate(progress, 1, {
+                    ...loopTransition,
+                    // Adjust duration proportionally for tween animations
+                    duration: loopTransition.type === "spring" ? undefined : 
+                             loopTransition.duration ? loopTransition.duration * (1 - progress) : undefined,
+                    onUpdate: (latest) => {
+                        setProgress(latest)
+                        setLoopProgress(latest)
                     },
                 })
             } else {
                 // For repeat and mirror, complete current cycle then restart natural cycle
-                await loopAnimation.start({
-                    x: 1,
-                    transition: {
-                        duration: remainingDuration,
-                        ease: getEasing(loopEasing),
+                animationControlsRef.current = animate(progress, 1, {
+                    ...loopTransition,
+                    // Adjust duration proportionally for tween animations
+                    duration: loopTransition.type === "spring" ? undefined : 
+                             loopTransition.duration ? loopTransition.duration * (1 - progress) : undefined,
+                    onUpdate: (latest) => {
+                        setProgress(latest)
+                        setLoopProgress(latest)
+                    },
+                    onComplete: () => {
+                        // Restart the loop animation from the beginning
+                        // This will trigger the useEffect dependency update
+                        setIsHovering(false)
+                        setIsTransitioning(false)
                     },
                 })
-
-                // Then start the natural loop cycle from 0
-                if (loopType === "repeat") {
-                    loopAnimation.start({
-                        x: [0, 1],
-                        transition: {
-                            duration: loopDuration,
-                            ease: getEasing(loopEasing),
-                            delay: loopDelay,
-                            repeat: Infinity,
-                            repeatType: "loop",
-                        },
-                    })
-                } else if (loopType === "mirror") {
-                    // Use Framer Motion's built-in mirror functionality
-                    loopAnimation.start({
-                        x: [0, 1, 0],
-                        transition: {
-                            duration: loopDuration * 2, // Double duration for full mirror cycle
-                            ease: getEasing(loopEasing),
-                            delay: loopDelay,
-                            repeat: Infinity,
-                            repeatType: "loop",
-                        },
-                    })
-                }
             }
         }
     }
@@ -1075,16 +1055,6 @@ const Html = ({
 
     return (
         <div style={{ height: "100%", width: "100%" }}>
-            {/* Hidden motion div to track loop animation progress */}
-            <motion.div
-                style={{ display: "none" }}
-                animate={loopAnimation}
-                onUpdate={(latest: any) => {
-                    if (typeof latest.x === "number") {
-                        loopProgressMotion.set(latest.x)
-                    }
-                }}
-            />
 
             <div
                 style={{ height: "100%" }}
@@ -1154,11 +1124,7 @@ export default function Home(props: {
     loop?: {
         enabled?: boolean;
         type?: "oneShot" | "repeat" | "mirror";
-        transition?: {
-            duration?: number;
-            ease?: string;
-            delay?: number;
-        };
+        transition?: any; // Full Framer Motion transition object
     };
     hover?: {
         enabled?: boolean;

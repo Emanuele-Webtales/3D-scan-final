@@ -56,23 +56,34 @@ const useIsMobile = () => {
 
 // Property Controls for Framer
 addPropertyControls(Home, {
+    // === BACKGROUND SECTION ===
+    showTexture: {
+        type: ControlType.Boolean,
+        title: "Show Background Image",
+        description: "Show the texture image as background",
+        defaultValue: false, // Changed to false by default
+    },
     textureMap: {
         type: ControlType.ResponsiveImage,
-        title: "Texture Map",
+        title: "Background Image",
         description: "The main texture image for the 3D scan effect",
+        hidden: (props) => !props.showTexture,
     },
     depthMap: {
         type: ControlType.ResponsiveImage,
         title: "Depth Map",
-        description:
-            "The depth map image that controls the 3D displacement effect",
+        description: "The depth map image that controls the 3D displacement effect",
+        hidden: (props) => !props.showTexture,
     },
-    dotColor: {
+    backgroundColor: {
         type: ControlType.Color,
-        title: "Dot Color",
-        description: "The color of the dots in the scanning effect",
-        defaultValue: "#00ff00",
+        title: "Background Color",
+        description: "Background color when texture is hidden",
+        defaultValue: "#000000", // Black background by default
+        hidden: (props) => props.showTexture ?? false,
     },
+
+    // === EFFECT SECTION ===
     effectType: {
         type: ControlType.Enum,
         title: "Effect Type",
@@ -81,6 +92,35 @@ addPropertyControls(Home, {
         optionTitles: ["Gradient Line", "Dots"],
         defaultValue: "gradient",
     },
+    dotColor: {
+        type: ControlType.Color,
+        title: "Effect Color",
+        description: "The color of the scanning effect",
+        defaultValue: "#ffffff", // Changed to white by default
+    },
+    intensity: {
+        type: ControlType.Number,
+        title: "Intensity",
+        description: "Intensity/brightness of the effect",
+        min: 0.0,
+        max: 5.0,
+        step: 0.1,
+        defaultValue: 1.0,
+    },
+
+    // === GRADIENT SETTINGS ===
+    gradientWidth: {
+        type: ControlType.Number,
+        title: "Line Width",
+        description: "Width of the gradient line effect",
+        min: 0.0,
+        max: 5.0,
+        step: 0.1,
+        defaultValue: 0.5,
+        hidden: (props) => props.effectType !== "gradient",
+    },
+
+    // === DOTS SETTINGS ===
     dotSize: {
         type: ControlType.Number,
         title: "Dot Size",
@@ -101,25 +141,8 @@ addPropertyControls(Home, {
         defaultValue: 50,
         hidden: (props) => props.effectType !== "dots",
     },
-    gradientWidth: {
-        type: ControlType.Number,
-        title: "Line Width",
-        description: "Width of the gradient line effect",
-        min: 0.0,
-        max: 5.0,
-        step: 0.1,
-        defaultValue: 0.5,
-        hidden: (props) => props.effectType !== "gradient",
-    },
-    intensity: {
-        type: ControlType.Number,
-        title: "Intensity",
-        description: "Intensity/brightness of the effect",
-        min: 0.0,
-        max: 5.0,
-        step: 0.1,
-        defaultValue: 1.0,
-    },
+
+    // === BLOOM EFFECTS ===
     bloomStrength: {
         type: ControlType.Number,
         title: "Bloom Strength",
@@ -138,22 +161,11 @@ addPropertyControls(Home, {
         step: 0.0001,
         defaultValue: 0.001,
     },
-    showTexture: {
-        type: ControlType.Boolean,
-        title: "Show Background Image",
-        description: "Show the texture image as background",
-        defaultValue: true,
-    },
-    backgroundColor: {
-        type: ControlType.Color,
-        title: "Background Color",
-        description: "Background color when texture is hidden",
-        defaultValue: "#000000",
-        hidden: (props) => props.showTexture ?? true,
-    },
+
+    // === ANIMATION SECTION ===
     loopEnabled: {
         type: ControlType.Boolean,
-        title: "Loop Animation",
+        title: "Auto Loop",
         description: "Enable automatic looping animation",
         defaultValue: false,
     },
@@ -185,6 +197,8 @@ addPropertyControls(Home, {
         defaultValue: "easeInOut",
         hidden: (props) => !props.loopEnabled,
     },
+
+    // === INTERACTION SECTION ===
     hoverEnabled: {
         type: ControlType.Boolean,
         title: "Hover Control",
@@ -193,7 +207,7 @@ addPropertyControls(Home, {
     },
     progressDirection: {
         type: ControlType.Enum,
-        title: "Progress Direction",
+        title: "Hover Direction",
         description: "Direction of the scanning effect when hovering",
         options: ["topToBottom", "bottomToTop", "leftToRight", "rightToLeft", "centerOutward", "outwardToCenter"],
         optionTitles: ["Top to Bottom", "Bottom to Top", "Left to Right", "Right to Left", "Center Outward", "Outward to Center"],
@@ -418,7 +432,7 @@ const Scene = ({
             : { r: 1, g: 0, b: 0 }
     }
         
-        return hexToRgb(dotColor || "#00ff00")
+        return hexToRgb(dotColor || "#ffffff")
     }, [dotColor])
 
     // Create background material for when texture is hidden
@@ -753,8 +767,8 @@ const Html = ({
     const intensity = propIntensity ?? 1.0 // Renamed from gradientIntensity
     const bloomStrength = propBloomStrength ?? 0.15
     const bloomRadius = propBloomRadius ?? 0.001
-    const showTexture = propShowTexture ?? true
-    const backgroundColor = propBackgroundColor ?? "#000000"
+    const showTexture = propShowTexture ?? false // Changed to false by default
+    const backgroundColor = propBackgroundColor ?? "#000000" // Black background by default
     
     // UI state that remains as state (not exposed as property controls)
     const [isVisible, setIsVisible] = useState(true)
@@ -1156,7 +1170,7 @@ const Html = ({
                     <PostProcessing></PostProcessing>
                     <Scene
                         dotSize={dotSize}
-                        dotColor={dotColor || "#00ff00"}
+                        dotColor={dotColor || "#ffffff"}
                         tilingScale={tilingScale}
                         effectType={effectType}
                         gradientWidth={gradientWidth / 10}

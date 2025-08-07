@@ -28,9 +28,18 @@ import {
 } from "react"
 import { animate } from "framer-motion"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
+import { ComponentMessage } from "https://framer.com/m/Utils-FINc.js"
 
-const WIDTH = 1600
-const HEIGHT = 900
+
+/**
+ * @framerDisableUnlink
+ * @framerSupportedLayoutWidth 600
+ * @framerSupportedLayoutHeight 300
+ */
+
+// Dynamic aspect ratio will be calculated from the actual images
+
+
 
 // Mobile/touch detection hook
 const useIsMobile = () => {
@@ -52,6 +61,21 @@ const useIsMobile = () => {
     }, [])
 
     return isMobile
+}
+
+// Hook to get image aspect ratio from texture
+const useImageAspectRatio = (texture: any) => {
+    const [aspectRatio, setAspectRatio] = useState(16 / 9) // Default aspect ratio
+
+    useEffect(() => {
+        if (texture && texture.image) {
+            const img = texture.image
+            const ratio = img.width / img.height
+            setAspectRatio(ratio)
+        }
+    }, [texture])
+
+    return aspectRatio
 }
 
 // Property Controls for Framer
@@ -386,6 +410,7 @@ const Scene = ({
     depthMap,
 }: SceneProps & { textureMap?: any; depthMap?: any }) => {
     const { setIsLoading } = useContext(GlobalContext)
+    const { viewport } = useThree()
     const materialRef = useRef<Mesh>(null)
 
     // Log dotColor changes (not every frame!) - removed for performance
@@ -410,6 +435,9 @@ const Scene = ({
             }
         }
     )
+
+    // Get aspect ratio from the main texture
+    const imageAspectRatio = useImageAspectRatio(rawMap)
 
     // Memoized color conversion - only recalculates when dotColor changes
     const rgbColor = useMemo(() => {
@@ -466,9 +494,27 @@ const Scene = ({
         uIntensity: { value: intensity }, // Renamed from uGradientIntensity
         uBloomStrength: { value: bloomStrength },
         uBloomRadius: { value: bloomRadius },
+        uAspectRatio: { value: imageAspectRatio }, // Dynamic aspect ratio
     })
 
-    const [w, h] = useAspect(WIDTH, HEIGHT)
+    // Calculate responsive scaling for COVER behavior - image fills entire container
+    const { width: scaleX, height: scaleY } = useMemo(() => {
+        const viewportAspectRatio = viewport.width / viewport.height
+        
+        if (imageAspectRatio > viewportAspectRatio) {
+            // Image is wider than viewport - scale to fill viewport height (image will be cropped on sides)
+            return {
+                width: viewport.height * imageAspectRatio,
+                height: viewport.height
+            }
+        } else {
+            // Image is taller than viewport - scale to fill viewport width (image will be cropped on top/bottom)
+            return {
+                width: viewport.width,
+                height: viewport.width / imageAspectRatio
+            }
+        }
+    }, [viewport.width, viewport.height, imageAspectRatio])
 
     // Store previous values to avoid unnecessary uniform updates
     const prevValuesRef = useRef({
@@ -501,7 +547,10 @@ const Scene = ({
         if (depthMapTexture) {
             uniformsRef.current.uDepthMap.value = depthMapTexture
         }
-    }, [progress, rgbColor, effectType, dotSize, tilingScale, gradientWidth, intensity, bloomStrength, bloomRadius, depthMapTexture])
+
+        // Update aspect ratio uniform
+        uniformsRef.current.uAspectRatio.value = imageAspectRatio
+    }, [progress, rgbColor, effectType, dotSize, tilingScale, gradientWidth, intensity, bloomStrength, bloomRadius, depthMapTexture, imageAspectRatio])
 
     // Update uniforms for the effects shader - optimized to only update when values change
     useFrame(() => {
@@ -573,17 +622,17 @@ const Scene = ({
         <>
             {/* Base layer - either texture image or background color */}
             {showTexture ? (
-                <mesh scale={[w, h, 1]} material={material}>
+                <mesh scale={[scaleX, scaleY, 1]} material={material}>
                     <planeGeometry />
                 </mesh>
             ) : (
-                <mesh scale={[w, h, 1]} material={backgroundMaterial}>
+                <mesh scale={[scaleX, scaleY, 1]} material={backgroundMaterial}>
                     <planeGeometry />
                 </mesh>
             )}
 
             {/* Effects overlay mesh */}
-            <mesh scale={[w, h, 1]} position={[0, 0, 0.01]} ref={materialRef}>
+            <mesh scale={[scaleX, scaleY, 1]} position={[0, 0, 0.01]} ref={materialRef}>
                 <planeGeometry />
                 <shaderMaterial
                     transparent={true}
@@ -606,6 +655,7 @@ const Scene = ({
             uniform float uIntensity;
             uniform float uBloomStrength;
             uniform float uBloomRadius;
+            uniform float uAspectRatio;
             varying vec2 vUv;
             
             // Noise functions removed for clean gradient lines
@@ -619,8 +669,8 @@ const Scene = ({
               
               // For dots effect - only render if explicitly in dots mode
               if (uEffectType < 0.5) {
-                // Create tiled UV for dots
-                vec2 aspect = vec2(1600.0 / 900.0, 1.0);
+                // Create tiled UV for dots using dynamic aspect ratio
+                vec2 aspect = vec2(uAspectRatio, 1.0);
                 vec2 tUv = vec2(uv.x * aspect.x, uv.y);
                 vec2 tiling = vec2(uTilingScale);
                 vec2 tiledUv = mod(tUv * tiling, 2.0) - 1.0;
@@ -1118,7 +1168,19 @@ export default function Home(props: {
         direction?: "topToBottom" | "bottomToTop" | "leftToRight" | "rightToLeft" | "centerOutward" | "outwardToCenter";
     };
 }) {
-    // Debug logs removed for performance
+    // Check if both images are missing
+    const hasTextureMap = props.textureMap && (props.textureMap.src || typeof props.textureMap === 'string')
+    const hasDepthMap = props.depthMap && (props.depthMap.src || typeof props.depthMap === 'string')
+    
+    // Show ComponentMessage if both images are missing
+    if (!hasTextureMap && !hasDepthMap) {
+        return (
+            <ComponentMessage 
+                title="3D Scan Effect"
+                description="Add an Image and Depth map to create stunning 3D scanning effects"
+            />
+        )
+    }
     
     return (
         <ContextProvider>

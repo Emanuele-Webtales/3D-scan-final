@@ -892,7 +892,10 @@ const Html = ({
 
     // Loop animation with Framer Motion animate function
     useEffect(() => {
-        startLoop(0,false)
+        // Only auto-start loop if we're not hovering (prevents flash when mouse leaves)
+        if (!isHovering) {
+            startLoop(0,false)
+        }
 
         return () => {
             if (animationControlsRef.current) {
@@ -900,7 +903,7 @@ const Html = ({
                 animationControlsRef.current = null
             }
         }
-    }, [loopEnabled, loopType, loopTransition, isHovering, isTransitioning, isLoading])
+    }, [loopEnabled, loopType, loopTransition, isTransitioning, isLoading]) // Removed isHovering from dependencies
 
     // Handle hover state changes for loop animation control
     useEffect(() => {
@@ -1030,11 +1033,8 @@ const Html = ({
         setIsTransitioning(false)
 
         if (loopEnabled) {
-            // Start the loop from the current progress position
-            // Use a small delay to ensure state updates have propagated
-            setTimeout(() => {
-                startLoop(currentProgress,true)
-            }, 0)
+            // Start the loop immediately from the current progress position
+            startLoop(currentProgress, true)
         }
     }
 

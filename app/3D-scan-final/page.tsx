@@ -812,10 +812,16 @@ const Html = ({
 
     // Loop animation with Framer Motion animate function
     useEffect(() => {
-        if (!loopEnabled) {
+        // Don't play animation in canvas mode or while loading
+        if (!loopEnabled || RenderTarget.current() === RenderTarget.canvas || isLoading) {
             if (animationControlsRef.current) {
                 animationControlsRef.current.stop()
                 animationControlsRef.current = null
+            }
+            // Keep progress at zero in canvas mode
+            if (RenderTarget.current() === RenderTarget.canvas) {
+                setProgress(0)
+                setLoopProgress(0)
             }
             return
         }
@@ -892,22 +898,22 @@ const Html = ({
                 animationControlsRef.current = null
             }
         }
-    }, [loopEnabled, loopType, loopTransition, isHovering, isTransitioning])
+    }, [loopEnabled, loopType, loopTransition, isHovering, isTransitioning, isLoading])
 
     // Handle hover state changes for loop animation control
     useEffect(() => {
-        if (!loopEnabled) return
+        if (!loopEnabled || RenderTarget.current() === RenderTarget.canvas || isLoading) return
 
         if (isHovering && hoverEnabled && !isMobile) {
             if (animationControlsRef.current) {
                 animationControlsRef.current.stop()
             }
         }
-    }, [isHovering, hoverEnabled, loopEnabled, isMobile])
+    }, [isHovering, hoverEnabled, loopEnabled, isMobile, isLoading])
 
     // Handle mouse movement to control the scanning effect
     const handleMouseMove = (e: React.MouseEvent) => {
-        if (!containerRef.current || !hoverEnabled || isMobile) return
+        if (!containerRef.current || !hoverEnabled || isMobile || RenderTarget.current() === RenderTarget.canvas) return
 
         // Get the bounding rectangle of the container
         const rect = containerRef.current.getBoundingClientRect()
@@ -995,7 +1001,7 @@ const Html = ({
 
     // Handle mouse entering the container
     const handleMouseEnter = () => {
-        if (!hoverEnabled || isMobile) return
+        if (!hoverEnabled || isMobile || RenderTarget.current() === RenderTarget.canvas) return
         setIsHovering(true)
 
         // If loop is active, start transition from current progress to hover
@@ -1012,7 +1018,7 @@ const Html = ({
 
     // Handle mouse leaving the container
     const handleMouseLeave = async () => {
-        if (!hoverEnabled || isMobile) return
+        if (!hoverEnabled || isMobile || RenderTarget.current() === RenderTarget.canvas) return
         setIsHovering(false)
         setIsTransitioning(false)
 

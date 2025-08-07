@@ -810,9 +810,10 @@ const Html = ({
     const containerRef = useRef<HTMLDivElement>(null)
     const animationControlsRef = useRef<any>(null)
 
-    // Loop animation with Framer Motion animate function
-    useEffect(() => {
-        // Don't play animation in canvas mode or while loading
+    // Loop animation function - defined outside useEffect so it can be called from hover handlers
+    const startLoop = (startFrom = 0, forceProgressUpdate = false) => {
+        console.log("startLoop called with startFrom:", startFrom, "forceProgressUpdate:", forceProgressUpdate)
+        
         if (!loopEnabled || RenderTarget.current() === RenderTarget.canvas || isLoading) {
             if (animationControlsRef.current) {
                 animationControlsRef.current.stop()
@@ -831,66 +832,67 @@ const Html = ({
             animationControlsRef.current.stop()
         }
 
-        const startLoop = () => {
-            if (loopType === "oneShot") {
-                animationControlsRef.current = animate(0, 1, {
+        if (loopType === "oneShot") {
+            animationControlsRef.current = animate(startFrom, 1, {
+                ...loopTransition,
+                onUpdate: (latest) => {
+                    setLoopProgress(latest)
+                    // Only set the main progress if not hovering and not transitioning, or if forcing update
+                    if (forceProgressUpdate || (!isHovering && !isTransitioning)) {
+                        setProgress(latest)
+                    }
+                },
+    })
+        } else if (loopType === "repeat") {
+            const animateForward = (currentValue = startFrom) => {
+                animationControlsRef.current = animate(currentValue, 1, {
                     ...loopTransition,
                     onUpdate: (latest) => {
                         setLoopProgress(latest)
                         // Only set the main progress if not hovering and not transitioning
-                        if (!isHovering && !isTransitioning) {
+                        if (forceProgressUpdate || (!isHovering && !isTransitioning)) {
                             setProgress(latest)
                         }
                     },
+                    onComplete: () => {
+                        if (loopEnabled && loopType === "repeat") {
+                            animateForward(0) // Restart from 0 for next cycle
+                        }
+                    },
                 })
-            } else if (loopType === "repeat") {
-                const animateForward = () => {
-                    animationControlsRef.current = animate(0, 1, {
-                        ...loopTransition,
-                        onUpdate: (latest) => {
-                            setLoopProgress(latest)
-                            // Only set the main progress if not hovering and not transitioning
-                            if (!isHovering && !isTransitioning) {
-                                setProgress(latest)
-                            }
-                        },
-                        onComplete: () => {
-                            if (loopEnabled && loopType === "repeat") {
-                                animateForward() // Restart the animation
-                            }
-                        },
-                    })
-                }
-                animateForward()
-            } else if (loopType === "mirror") {
-                let direction = 1 // 1 for forward, -1 for backward
-                let currentValue = 0
-                
-                const animateMirror = () => {
-                    const target = direction === 1 ? 1 : 0
-                    animationControlsRef.current = animate(currentValue, target, {
-                        ...loopTransition,
-                        onUpdate: (latest) => {
-                            currentValue = latest
-                            setLoopProgress(latest)
-                            // Only set the main progress if not hovering and not transitioning
-                            if (!isHovering && !isTransitioning) {
-                                setProgress(latest)
-                            }
-                        },
-                        onComplete: () => {
-                            if (loopEnabled && loopType === "mirror") {
-                                direction *= -1 // Reverse direction
-                                animateMirror() // Continue mirror animation
-                            }
-                        },
-                    })
-                }
-                animateMirror()
             }
+            animateForward()
+        } else if (loopType === "mirror") {
+            let direction = startFrom < 0.5 ? 1 : -1 // Determine direction based on start position
+            let currentValue = startFrom
+            
+            const animateMirror = () => {
+                const target = direction === 1 ? 1 : 0
+                animationControlsRef.current = animate(currentValue, target, {
+                    ...loopTransition,
+                    onUpdate: (latest) => {
+                        currentValue = latest
+                        setLoopProgress(latest)
+                        // Only set the main progress if not hovering and not transitioning, or if forcing update
+                        if (forceProgressUpdate || (!isHovering && !isTransitioning)) {
+                            setProgress(latest)
+                        }
+                    },
+                    onComplete: () => {
+                        if (loopEnabled && loopType === "mirror") {
+                            direction *= -1 // Reverse direction
+                            animateMirror() // Continue mirror animation
+                        }
+                    },
+                })
+            }
+            animateMirror()
         }
+    }
 
-        startLoop()
+    // Loop animation with Framer Motion animate function
+    useEffect(() => {
+        startLoop(0,false)
 
         return () => {
             if (animationControlsRef.current) {
@@ -1019,41 +1021,20 @@ const Html = ({
     // Handle mouse leaving the container
     const handleMouseLeave = async () => {
         if (!hoverEnabled || isMobile || RenderTarget.current() === RenderTarget.canvas) return
+        
+        // Capture the current progress before changing state
+        const currentProgress = progress
+        console.log("Mouse leave - current progress:", currentProgress)
+        
         setIsHovering(false)
         setIsTransitioning(false)
 
         if (loopEnabled) {
-            if (loopType === "oneShot") {
-                // For one shot, just complete to 1 and stop
-                animationControlsRef.current = animate(progress, 1, {
-                    ...loopTransition,
-                    // Adjust duration proportionally for tween animations
-                    duration: loopTransition.type === "spring" ? undefined : 
-                             loopTransition.duration ? loopTransition.duration * (1 - progress) : undefined,
-                    onUpdate: (latest) => {
-                        setProgress(latest)
-                        setLoopProgress(latest)
-                    },
-                })
-            } else {
-                // For repeat and mirror, complete current cycle then restart natural cycle
-                animationControlsRef.current = animate(progress, 1, {
-                    ...loopTransition,
-                    // Adjust duration proportionally for tween animations
-                    duration: loopTransition.type === "spring" ? undefined : 
-                             loopTransition.duration ? loopTransition.duration * (1 - progress) : undefined,
-                    onUpdate: (latest) => {
-                        setProgress(latest)
-                        setLoopProgress(latest)
-                    },
-                    onComplete: () => {
-                        // Restart the loop animation from the beginning
-                        // This will trigger the useEffect dependency update
-                        setIsHovering(false)
-                        setIsTransitioning(false)
-                    },
-                })
-            }
+            // Start the loop from the current progress position
+            // Use a small delay to ensure state updates have propagated
+            setTimeout(() => {
+                startLoop(currentProgress,true)
+            }, 0)
         }
     }
 

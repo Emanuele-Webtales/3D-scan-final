@@ -56,163 +56,173 @@ const useIsMobile = () => {
 
 // Property Controls for Framer
 addPropertyControls(Home, {
-    // === BACKGROUND SECTION ===
-    showTexture: {
-        type: ControlType.Boolean,
-        title: "Show Background Image",
-        description: "Show the texture image as background",
-        defaultValue: false, // Changed to false by default
-    },
     textureMap: {
         type: ControlType.ResponsiveImage,
-        title: "Background Image",
-        description: "The main texture image for the 3D scan effect",
-        hidden: (props) => !props.showTexture,
+        title: "Image",
     },
     depthMap: {
         type: ControlType.ResponsiveImage,
-        title: "Depth Map",
-        description: "The depth map image that controls the 3D displacement effect",
-        hidden: (props) => !props.showTexture,
+        title: "Depth",
+    },
+    showTexture: {
+        type: ControlType.Boolean,
+        title: "Show Image",
+        defaultValue: false,
     },
     backgroundColor: {
         type: ControlType.Color,
-        title: "Background Color",
-        description: "Background color when texture is hidden",
-        defaultValue: "#000000", // Black background by default
+        title: "Background",
+        defaultValue: "#000000",
         hidden: (props) => props.showTexture ?? false,
     },
-
-    // === EFFECT SECTION ===
     effectType: {
         type: ControlType.Enum,
-        title: "Effect Type",
-        description: "Choose between dots or gradient line effect",
+        title: "Type",
         options: ["gradient", "dots"],
-        optionTitles: ["Gradient Line", "Dots"],
+        optionTitles: ["Gradient", "Dots"],
         defaultValue: "gradient",
     },
     dotColor: {
         type: ControlType.Color,
-        title: "Effect Color",
-        description: "The color of the scanning effect",
-        defaultValue: "#ffffff", // Changed to white by default
+        title: "Color",
+        defaultValue: "#ffffff",
     },
     intensity: {
         type: ControlType.Number,
         title: "Intensity",
-        description: "Intensity/brightness of the effect",
-        min: 0.0,
+        min: 0.1,
         max: 5.0,
         step: 0.1,
         defaultValue: 1.0,
     },
-
-    // === GRADIENT SETTINGS ===
-    gradientWidth: {
-        type: ControlType.Number,
-        title: "Line Width",
-        description: "Width of the gradient line effect",
-        min: 0.0,
-        max: 5.0,
-        step: 0.1,
-        defaultValue: 0.5,
+    
+    gradient: {
+        type: ControlType.Object,
+        title: "Gradient",
         hidden: (props) => props.effectType !== "gradient",
+        controls: {
+            width: {
+                type: ControlType.Number,
+                title: "Width",
+                min: 0.0,
+                max: 5.0,
+                step: 0.1,
+                defaultValue: 0.5,
+            },
+            bloomStrength: {
+                type: ControlType.Number,
+                title: "Bloom",
+                min: 0.0,
+                max: 1.0,
+                step: 0.01,
+                defaultValue: 0.15,
+            },
+            bloomRadius: {
+                type: ControlType.Number,
+                title: "Radius",
+                min: 0.0001,
+                max: 0.01,
+                step: 0.0001,
+                defaultValue: 0.001,
+            },
+        },
     },
 
-    // === DOTS SETTINGS ===
-    dotSize: {
-        type: ControlType.Number,
-        title: "Dot Size",
-        description: "Size of the dots when using dots effect",
-        min: 0.01,
-        max: 2.0,
-        step: 0.01,
-        defaultValue: 0.1,
+    dots: {
+        type: ControlType.Object,
+        title: "Dots",
         hidden: (props) => props.effectType !== "dots",
-    },
-    tilingScale: {
-        type: ControlType.Number,
-        title: "Tiling Scale",
-        description: "Number of dots tiled across the surface",
-        min: 20,
-        max: 200,
-        step: 10,
-        defaultValue: 50,
-        hidden: (props) => props.effectType !== "dots",
-    },
-
-    // === BLOOM EFFECTS ===
-    bloomStrength: {
-        type: ControlType.Number,
-        title: "Bloom Strength",
-        description: "Strength of the bloom glow effect",
-        min: 0.0,
-        max: 1.0,
-        step: 0.01,
-        defaultValue: 0.15,
-    },
-    bloomRadius: {
-        type: ControlType.Number,
-        title: "Bloom Radius",
-        description: "Radius of the bloom glow effect",
-        min: 0.0001,
-        max: 0.01,
-        step: 0.0001,
-        defaultValue: 0.001,
-    },
-
-    // === ANIMATION SECTION ===
-    loopEnabled: {
-        type: ControlType.Boolean,
-        title: "Auto Loop",
-        description: "Enable automatic looping animation",
-        defaultValue: false,
-    },
-    loopType: {
-        type: ControlType.Enum,
-        title: "Loop Type",
-        description: "Type of loop animation",
-        options: ["repeat", "mirror", "oneShot"],
-        optionTitles: ["Repeat", "Mirror", "One Shot"],
-        defaultValue: "repeat",
-        hidden: (props) => !props.loopEnabled,
-    },
-    loopDuration: {
-        type: ControlType.Number,
-        title: "Loop Duration",
-        description: "Duration of each loop cycle in seconds",
-        min: 0.5,
-        max: 10,
-        step: 0.1,
-        defaultValue: 3,
-        hidden: (props) => !props.loopEnabled,
-    },
-    loopEasing: {
-        type: ControlType.Enum,
-        title: "Loop Easing",
-        description: "Easing function for the loop animation",
-        options: ["easeInOut", "easeIn", "easeOut", "power2.inOut", "power2.in", "power2.out"],
-        optionTitles: ["Ease In Out", "Ease In", "Ease Out", "Power2 In Out", "Power2 In", "Power2 Out"],
-        defaultValue: "easeInOut",
-        hidden: (props) => !props.loopEnabled,
+        controls: {
+            size: {
+                type: ControlType.Number,
+                title: "Size",
+                min: 0.01,
+                max: 2.0,
+                step: 0.01,
+                defaultValue: 0.1,
+            },
+            tiling: {
+                type: ControlType.Number,
+                title: "Tiling",
+                min: 20,
+                max: 200,
+                step: 10,
+                defaultValue: 50,
+            },
+            bloomStrength: {
+                type: ControlType.Number,
+                title: "Bloom",
+                min: 0.0,
+                max: 1.0,
+                step: 0.01,
+                defaultValue: 0.15,
+            },
+            bloomRadius: {
+                type: ControlType.Number,
+                title: "Radius",
+                min: 0.0001,
+                max: 0.01,
+                step: 0.0001,
+                defaultValue: 0.001,
+            },
+        },
     },
 
-    // === INTERACTION SECTION ===
-    hoverEnabled: {
-        type: ControlType.Boolean,
-        title: "Hover Control",
-        description: "Enable mouse hover to control the scan effect",
-        defaultValue: true,
+    loop: {
+        type: ControlType.Object,
+        title: "Loop",
+        controls: {
+            enabled: {
+                type: ControlType.Boolean,
+                title: "Enable",
+                defaultValue: false,
+            },
+            type: {
+                type: ControlType.Enum,
+                title: "Type",
+                options: ["repeat", "mirror", "oneShot"],
+                optionTitles: ["Repeat", "Mirror", "One Shot"],
+                defaultValue: "repeat",
+                hidden: (props) => !props.loop?.enabled,
+            },
+            duration: {
+                type: ControlType.Number,
+                title: "Duration",
+                min: 0.5,
+                max: 10,
+                step: 0.1,
+                defaultValue: 3,
+                hidden: (props) => !props.loop?.enabled,
+            },
+            easing: {
+                type: ControlType.Enum,
+                title: "Easing",
+                options: ["easeInOut", "easeIn", "easeOut", "power2.inOut", "power2.in", "power2.out"],
+                optionTitles: ["In Out", "In", "Out", "Power In Out", "Power In", "Power Out"],
+                defaultValue: "easeInOut",
+                hidden: (props) => !props.loop?.enabled,
+            },
+        },
     },
-    progressDirection: {
-        type: ControlType.Enum,
-        title: "Hover Direction",
-        description: "Direction of the scanning effect when hovering",
-        options: ["topToBottom", "bottomToTop", "leftToRight", "rightToLeft", "centerOutward", "outwardToCenter"],
-        optionTitles: ["Top to Bottom", "Bottom to Top", "Left to Right", "Right to Left", "Center Outward", "Outward to Center"],
-        defaultValue: "topToBottom",
-        hidden: (props) => !props.hoverEnabled,
+
+    hover: {
+        type: ControlType.Object,
+        title: "Hover",
+        controls: {
+            enabled: {
+                type: ControlType.Boolean,
+                title: "Enable",
+                defaultValue: true,
+            },
+            direction: {
+                type: ControlType.Enum,
+                title: "Direction",
+                options: ["topToBottom", "bottomToTop", "leftToRight", "rightToLeft", "centerOutward", "outwardToCenter"],
+                optionTitles: ["Top Down", "Bottom Up", "Left Right", "Right Left", "Center Out", "Out Center"],
+                defaultValue: "topToBottom",
+                hidden: (props) => !props.hover?.enabled,
+            },
+        },
     },
 })
 
@@ -718,39 +728,42 @@ const Html = ({
     depthMap,
     dotColor,
     effectType: propEffectType,
-    dotSize: propDotSize,
-    tilingScale: propTilingScale,
-    gradientWidth: propGradientWidth,
     intensity: propIntensity,
-    bloomStrength: propBloomStrength,
-    bloomRadius: propBloomRadius,
     showTexture: propShowTexture,
     backgroundColor: propBackgroundColor,
-    loopEnabled: propLoopEnabled,
-    loopType: propLoopType,
-    loopDuration: propLoopDuration,
-    loopEasing: propLoopEasing,
-    hoverEnabled: propHoverEnabled,
-    progressDirection: propProgressDirection,
+    gradient: propGradient,
+    dots: propDots,
+    loop: propLoop,
+    hover: propHover,
 }: {
     textureMap?: any
     depthMap?: any
     dotColor?: string
     effectType?: "dots" | "gradient"
-    dotSize?: number
-    tilingScale?: number
-    gradientWidth?: number
     intensity?: number
-    bloomStrength?: number
-    bloomRadius?: number
     showTexture?: boolean
     backgroundColor?: string
-    loopEnabled?: boolean
-    loopType?: "oneShot" | "repeat" | "mirror"
-    loopDuration?: number
-    loopEasing?: string
-    hoverEnabled?: boolean
-    progressDirection?: "topToBottom" | "bottomToTop" | "leftToRight" | "rightToLeft" | "centerOutward" | "outwardToCenter"
+    gradient?: {
+        width?: number;
+        bloomStrength?: number;
+        bloomRadius?: number;
+    }
+    dots?: {
+        size?: number;
+        tiling?: number;
+        bloomStrength?: number;
+        bloomRadius?: number;
+    }
+    loop?: {
+        enabled?: boolean;
+        type?: "oneShot" | "repeat" | "mirror";
+        duration?: number;
+        easing?: string;
+    }
+    hover?: {
+        enabled?: boolean;
+        direction?: "topToBottom" | "bottomToTop" | "leftToRight" | "rightToLeft" | "centerOutward" | "outwardToCenter";
+    }
 }) => {
     // Debug logs removed for performance
     
@@ -760,26 +773,35 @@ const Html = ({
     // Debug logs removed for performance
 
     // Effect-related props with defaults
-    const dotSize = propDotSize ?? 0.1
-    const tilingScale = propTilingScale ?? 50
     const effectType = propEffectType ?? "gradient"
-    const gradientWidth = propGradientWidth ?? 0.5
-    const intensity = propIntensity ?? 1.0 // Renamed from gradientIntensity
-    const bloomStrength = propBloomStrength ?? 0.15
-    const bloomRadius = propBloomRadius ?? 0.001
-    const showTexture = propShowTexture ?? false // Changed to false by default
-    const backgroundColor = propBackgroundColor ?? "#000000" // Black background by default
+    const intensity = propIntensity ?? 1.0
+    const showTexture = propShowTexture ?? false
+    const backgroundColor = propBackgroundColor ?? "#000000"
+    
+    // Extract nested object props with defaults
+    const dotSize = propDots?.size ?? 0.1
+    const tilingScale = propDots?.tiling ?? 50
+    const dotsBloomStrength = propDots?.bloomStrength ?? 0.15
+    const dotsBloomRadius = propDots?.bloomRadius ?? 0.001
+    
+    const gradientWidth = propGradient?.width ?? 0.5
+    const gradientBloomStrength = propGradient?.bloomStrength ?? 0.15
+    const gradientBloomRadius = propGradient?.bloomRadius ?? 0.001
+    
+    const loopEnabled = propLoop?.enabled ?? false
+    const loopType = propLoop?.type ?? "repeat"
+    const loopDuration = propLoop?.duration ?? 3
+    const loopEasing = propLoop?.easing ?? "easeInOut"
+    
+    const hoverEnabled = propHover?.enabled ?? !isMobile
+    const progressDirection = propHover?.direction ?? "topToBottom"
+    
+    // Use appropriate bloom values based on effect type
+    const bloomStrength = effectType === "dots" ? dotsBloomStrength : gradientBloomStrength
+    const bloomRadius = effectType === "dots" ? dotsBloomRadius : gradientBloomRadius
     
     // UI state that remains as state (not exposed as property controls)
     const [isVisible, setIsVisible] = useState(true)
-
-    // Loop and hover props with defaults
-    const loopEnabled = propLoopEnabled ?? false
-    const loopType = propLoopType ?? "repeat"
-    const loopDuration = propLoopDuration ?? 3
-    const loopEasing = propLoopEasing ?? "easeInOut"
-    const hoverEnabled = propHoverEnabled ?? !isMobile
-    const progressDirection = propProgressDirection ?? "topToBottom"
 
     // Mouse and progress state
     const [progress, setProgress] = useState(0)
@@ -1267,20 +1289,30 @@ export default function Home(props: {
     depthMap?: any; 
     dotColor?: string; 
     effectType?: "dots" | "gradient";
-    dotSize?: number;
-    tilingScale?: number;
-    gradientWidth?: number;
     intensity?: number;
-    bloomStrength?: number;
-    bloomRadius?: number;
     showTexture?: boolean;
     backgroundColor?: string;
-    loopEnabled?: boolean;
-    loopType?: "oneShot" | "repeat" | "mirror";
-    loopDuration?: number;
-    loopEasing?: string;
-    hoverEnabled?: boolean;
-    progressDirection?: "topToBottom" | "bottomToTop" | "leftToRight" | "rightToLeft" | "centerOutward" | "outwardToCenter";
+    gradient?: {
+        width?: number;
+        bloomStrength?: number;
+        bloomRadius?: number;
+    };
+    dots?: {
+        size?: number;
+        tiling?: number;
+        bloomStrength?: number;
+        bloomRadius?: number;
+    };
+    loop?: {
+        enabled?: boolean;
+        type?: "oneShot" | "repeat" | "mirror";
+        duration?: number;
+        easing?: string;
+    };
+    hover?: {
+        enabled?: boolean;
+        direction?: "topToBottom" | "bottomToTop" | "leftToRight" | "rightToLeft" | "centerOutward" | "outwardToCenter";
+    };
 }) {
     // Debug logs removed for performance
     
@@ -1291,20 +1323,13 @@ export default function Home(props: {
                 depthMap={props.depthMap}
                 dotColor={props.dotColor}
                 effectType={props.effectType}
-                dotSize={props.dotSize}
-                tilingScale={props.tilingScale}
-                gradientWidth={props.gradientWidth}
                 intensity={props.intensity}
-                bloomStrength={props.bloomStrength}
-                bloomRadius={props.bloomRadius}
                 showTexture={props.showTexture}
                 backgroundColor={props.backgroundColor}
-                loopEnabled={props.loopEnabled}
-                loopType={props.loopType}
-                loopDuration={props.loopDuration}
-                loopEasing={props.loopEasing}
-                hoverEnabled={props.hoverEnabled}
-                progressDirection={props.progressDirection}
+                gradient={props.gradient}
+                dots={props.dots}
+                loop={props.loop}
+                hover={props.hover}
             ></Html>
         </ContextProvider>
     )

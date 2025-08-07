@@ -183,24 +183,16 @@ addPropertyControls(Home, {
                 options: ["repeat", "mirror", "oneShot"],
                 optionTitles: ["Repeat", "Mirror", "One Shot"],
                 defaultValue: "repeat",
-                hidden: (props) => !props.loop?.enabled,
+                hidden: (props) => !props.enabled,
             },
-            duration: {
-                type: ControlType.Number,
-                title: "Duration",
-                min: 0.5,
-                max: 10,
-                step: 0.1,
-                defaultValue: 3,
-                hidden: (props) => !props.loop?.enabled,
-            },
-            easing: {
-                type: ControlType.Enum,
-                title: "Easing",
-                options: ["easeInOut", "easeIn", "easeOut", "power2.inOut", "power2.in", "power2.out"],
-                optionTitles: ["In Out", "In", "Out", "Power In Out", "Power In", "Power Out"],
-                defaultValue: "easeInOut",
-                hidden: (props) => !props.loop?.enabled,
+            transition: {
+                type: ControlType.Transition,
+                title: "Timing",
+                defaultValue: {
+                    duration: 3,
+                    ease: "easeInOut",
+                },
+                hidden: (props) => !props.enabled,
             },
         },
     },
@@ -220,7 +212,7 @@ addPropertyControls(Home, {
                 options: ["topToBottom", "bottomToTop", "leftToRight", "rightToLeft", "centerOutward", "outwardToCenter"],
                 optionTitles: ["Top Down", "Bottom Up", "Left Right", "Right Left", "Center Out", "Out Center"],
                 defaultValue: "topToBottom",
-                hidden: (props) => !props.hover?.enabled,
+                hidden: (props) => !props.enabled,
             },
         },
     },
@@ -632,23 +624,24 @@ const Scene = ({
                 vec2 tiling = vec2(uTilingScale);
                 vec2 tiledUv = mod(tUv * tiling, 2.0) - 1.0;
                 
-                // Create dots (without noise for clean appearance)
+                // Create dots with proper size control
                 float dist = length(tiledUv);
-                float dot = smoothstep(0.5, 0.49, dist);
+                float dotRadius = 0.5 - (uDotSize * 0.4); // uDotSize controls actual dot size
+                float dot = smoothstep(dotRadius, dotRadius - 0.01, dist);
                 
-                // Combine dots with flow, scale by dot size for better control
-                float dotEffect = dot * flow * uDotSize;
+                // Base dot effect (no multiplication by uDotSize)
+                float dotEffect = dot * flow;
                 
                 // Apply bloom effect to dots
                 float bloomSize = uBloomRadius * 100.0;
                 float dotBloom = 0.0;
                 
-                // Core bloom for dots
+                // Core bloom for dots - use the same dot radius
                 float coreBloom = dot * flow * uBloomStrength;
-                // Medium bloom - slightly larger area
-                float mediumBloom = smoothstep(0.7, 0.3, dist) * flow * uBloomStrength * 0.6;
+                // Medium bloom - extends from dot edge
+                float mediumBloom = smoothstep(dotRadius + bloomSize * 0.3, dotRadius, dist) * flow * uBloomStrength * 0.6;
                 // Outer bloom - largest area
-                float outerBloom = smoothstep(0.9, 0.1, dist) * flow * uBloomStrength * 0.3;
+                float outerBloom = smoothstep(dotRadius + bloomSize, dotRadius, dist) * flow * uBloomStrength * 0.3;
                 
                 dotBloom = max(max(coreBloom, mediumBloom), outerBloom);
                 
@@ -757,8 +750,11 @@ const Html = ({
     loop?: {
         enabled?: boolean;
         type?: "oneShot" | "repeat" | "mirror";
-        duration?: number;
-        easing?: string;
+        transition?: {
+            duration?: number;
+            ease?: string;
+            delay?: number;
+        };
     }
     hover?: {
         enabled?: boolean;
@@ -790,8 +786,9 @@ const Html = ({
     
     const loopEnabled = propLoop?.enabled ?? false
     const loopType = propLoop?.type ?? "repeat"
-    const loopDuration = propLoop?.duration ?? 3
-    const loopEasing = propLoop?.easing ?? "easeInOut"
+    const loopDuration = propLoop?.transition?.duration ?? 3
+    const loopEasing = propLoop?.transition?.ease ?? "easeInOut"
+    const loopDelay = propLoop?.transition?.delay ?? 0
     
     const hoverEnabled = propHover?.enabled ?? !isMobile
     const progressDirection = propHover?.direction ?? "topToBottom"
@@ -810,9 +807,7 @@ const Html = ({
     const [isTransitioning, setIsTransitioning] = useState(false)
     const [transitionStartProgress, setTransitionStartProgress] = useState(0)
     const [transitionStartTime, setTransitionStartTime] = useState(0)
-    const [mirrorDirection, setMirrorDirection] = useState<
-        "forward" | "backward"
-    >("forward")
+
     const containerRef = useRef<HTMLDivElement>(null)
     const loopAnimation = useAnimation()
     const loopProgressMotion = useMotionValue(0)
@@ -854,6 +849,7 @@ const Html = ({
                     transition: {
                         duration: loopDuration,
                         ease: getEasing(loopEasing),
+                        delay: loopDelay,
                     },
                 })
             } else if (loopType === "repeat") {
@@ -862,41 +858,23 @@ const Html = ({
                     transition: {
                         duration: loopDuration,
                         ease: getEasing(loopEasing),
+                        delay: loopDelay,
                         repeat: Infinity,
                         repeatType: "loop",
                     },
                 })
             } else if (loopType === "mirror") {
-                // Custom mirror implementation with direction tracking
-                const runMirrorLoop = async () => {
-                    setMirrorDirection("forward")
-
-                    while (loopEnabled) {
-                        // Forward animation: 0 -> 1
-                        setMirrorDirection("forward")
-                        await loopAnimation.start({
-                            x: [0, 1],
-                            transition: {
-                                duration: loopDuration,
-                                ease: getEasing(loopEasing),
-                            },
-                        })
-
-                        if (!loopEnabled) break
-
-                        // Backward animation: 1 -> 0
-                        setMirrorDirection("backward")
-                        await loopAnimation.start({
-                            x: [1, 0],
-                            transition: {
-                                duration: loopDuration,
-                                ease: getEasing(loopEasing),
-                            },
-                        })
-                    }
-                }
-
-                runMirrorLoop()
+                // Use Framer Motion's built-in mirror repeat type
+                await loopAnimation.start({
+                    x: [0, 1, 0],
+                    transition: {
+                        duration: loopDuration * 2, // Double duration for full mirror cycle
+                        ease: getEasing(loopEasing),
+                        delay: loopDelay,
+                        repeat: Infinity,
+                        repeatType: "loop",
+                    },
+                })
             }
         }
 
@@ -905,7 +883,7 @@ const Html = ({
         return () => {
             loopAnimation.stop()
         }
-    }, [loopEnabled, loopDuration, loopType, loopEasing, loopAnimation])
+    }, [loopEnabled, loopDuration, loopType, loopEasing, loopDelay])
 
     // Update progress based on loop animation
     useEffect(() => {
@@ -927,7 +905,7 @@ const Html = ({
         if (isHovering && hoverEnabled && !isMobile) {
             loopAnimation.stop()
         }
-    }, [isHovering, hoverEnabled, loopEnabled, isMobile, loopAnimation])
+    }, [isHovering, hoverEnabled, loopEnabled, isMobile])
 
     // Handle mouse movement to control the scanning effect
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -1071,50 +1049,23 @@ const Html = ({
                         transition: {
                             duration: loopDuration,
                             ease: getEasing(loopEasing),
+                            delay: loopDelay,
                             repeat: Infinity,
                             repeatType: "loop",
                         },
                     })
                 } else if (loopType === "mirror") {
-                    // For mirror mode, determine direction based on current progress and continue appropriately
-                    const runMirrorLoop = async () => {
-                        // Since we just completed to 1, we should now go backward (1 -> 0)
-                        setMirrorDirection("backward")
-                        await loopAnimation.start({
-                            x: [1, 0],
-                            transition: {
-                                duration: loopDuration,
-                                ease: getEasing(loopEasing),
-                            },
-                        })
-
-                        // After reaching 0, continue with normal mirror loop
-                        while (loopEnabled) {
-                            // Forward animation: 0 -> 1
-                            setMirrorDirection("forward")
-                            await loopAnimation.start({
-                                x: [0, 1],
-                                transition: {
-                                    duration: loopDuration,
-                                    ease: getEasing(loopEasing),
-                                },
-                            })
-
-                            if (!loopEnabled) break
-
-                            // Backward animation: 1 -> 0
-                            setMirrorDirection("backward")
-                            await loopAnimation.start({
-                                x: [1, 0],
-                                transition: {
-                                    duration: loopDuration,
-                                    ease: getEasing(loopEasing),
-                                },
-                            })
-                        }
-                    }
-
-                    runMirrorLoop()
+                    // Use Framer Motion's built-in mirror functionality
+                    loopAnimation.start({
+                        x: [0, 1, 0],
+                        transition: {
+                            duration: loopDuration * 2, // Double duration for full mirror cycle
+                            ease: getEasing(loopEasing),
+                            delay: loopDelay,
+                            repeat: Infinity,
+                            repeatType: "loop",
+                        },
+                    })
                 }
             }
         }
@@ -1134,36 +1085,6 @@ const Html = ({
                     }
                 }}
             />
-
-            {isLoading && (
-                <div
-                    style={{
-                        height: "100%",
-                        position: "fixed",
-                        zIndex: 90,
-                        backgroundColor: "#92400e",
-                        pointerEvents: "none",
-                        width: "100%",
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "center",
-                        opacity: isLoading ? 1 : 0,
-                        transition: "opacity 0.5s ease-out",
-                    }}
-                    data-loader
-                >
-                    <div
-                        style={{
-                            width: "1.5rem",
-                            height: "1.5rem",
-                            backgroundColor: "white",
-                            borderRadius: "50%",
-                            animation:
-                                "ping 1s cubic-bezier(0, 0, 0.2, 1) infinite",
-                        }}
-                    ></div>
-                </div>
-            )}
 
             <div
                 style={{ height: "100%" }}
@@ -1206,79 +1127,6 @@ const Html = ({
                         depthMap={depthMap}
                     />
                 </WebGPUCanvas>
-
-                {/* Debug Panel */}
-                <div
-                    style={{
-                        position: "fixed",
-                        top: "20px",
-                        right: "20px",
-                        background: "rgba(0, 0, 0, 0.8)",
-                        color: "white",
-                        padding: "15px",
-                        borderRadius: "8px",
-                        fontSize: "12px",
-                        fontFamily: "monospace",
-                        zIndex: 1000,
-                        minWidth: "200px",
-                    }}
-                >
-                    <h4 style={{ margin: "0 0 10px 0", fontSize: "14px" }}>
-                        Debug Panel
-                    </h4>
-                    <div style={{ marginBottom: "5px" }}>
-                        Current Progress: {(progress * 100).toFixed(1)}%
-                    </div>
-                    <div style={{ marginBottom: "5px" }}>
-                        Loop Progress: {(loopProgress * 100).toFixed(1)}%
-                    </div>
-                    <div style={{ marginBottom: "5px" }}>
-                        Loop Enabled: {loopEnabled ? "YES" : "NO"}
-                    </div>
-                    <div style={{ marginBottom: "5px" }}>
-                        Hover Enabled: {hoverEnabled ? "YES" : "NO"}
-                    </div>
-                    <div style={{ marginBottom: "5px" }}>
-                        Is Hovering: {isHovering ? "YES" : "NO"}
-                    </div>
-                    <div style={{ marginBottom: "5px" }}>
-                        Is Transitioning: {isTransitioning ? "YES" : "NO"}
-                    </div>
-                    <div style={{ marginBottom: "5px" }}>
-                        Loop Type: {loopType}
-                    </div>
-                    <div style={{ marginBottom: "5px" }}>
-                        Mirror Direction: {mirrorDirection}
-                    </div>
-                </div>
-
-                {/* Toggle button for controls */}
-                {!isVisible && (
-                    <button
-                        onClick={() => setIsVisible(true)}
-                        style={{
-                            position: "fixed",
-                            top: "20px",
-                            right: "250px",
-                            background: "rgba(0, 0, 0, 0.8)",
-                            color: "white",
-                            border: "1px solid rgba(255, 255, 255, 0.3)",
-                            padding: "8px 12px",
-                            borderRadius: "5px",
-                            cursor: "pointer",
-                            fontSize: "12px",
-                            zIndex: 1000,
-                        }}
-                    >
-                        Show Controls
-                    </button>
-                )}
-
-                {/* UI Controls */}
-                <UIControls
-                    isVisible={isVisible}
-                    setIsVisible={setIsVisible}
-                />
             </div>
         </div>
     )
@@ -1306,8 +1154,11 @@ export default function Home(props: {
     loop?: {
         enabled?: boolean;
         type?: "oneShot" | "repeat" | "mirror";
-        duration?: number;
-        easing?: string;
+        transition?: {
+            duration?: number;
+            ease?: string;
+            delay?: number;
+        };
     };
     hover?: {
         enabled?: boolean;

@@ -1,0 +1,287 @@
+'use client';
+
+import { useEffect, useRef, useState } from "react";
+import { gsap } from "gsap";
+import { useGSAP } from "@gsap/react";
+import { SplitText } from "gsap/SplitText";
+import { ScrambleTextPlugin } from "gsap/ScrambleTextPlugin";
+
+gsap.registerPlugin(SplitText, ScrambleTextPlugin, useGSAP);
+
+interface ScrambleTextProps {
+  text: string;
+  radius?: number;
+  duration?: number;
+  speed?: number;
+  scrambleChars?: string;
+  scrambleInterval?: number;
+  className?: string;
+  style?: React.CSSProperties;
+  color?: string;
+  scrambleColor?: string;
+  font?: React.CSSProperties;
+}
+
+const DEFAULT_SCRAMBLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?";
+
+const ScrambledText = ({
+  text,
+  radius = 100,
+  duration = 1.2,
+  speed = 0.5,
+  scrambleChars = ".:",
+  scrambleInterval = 500,
+  className = "",
+  style = {},
+  color = "#000000",
+  scrambleColor = "#8855FF",
+  font = {}
+}: ScrambleTextProps) => {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const charsRef = useRef<Element[]>([]);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [isMouseOverText, setIsMouseOverText] = useState(false);
+  const isMouseOverTextRef = useRef<boolean>(false);
+  const currentMousePosRef = useRef({ x: 0, y: 0 });
+  const scrambleIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const currentScrambledStates = useRef<Map<Element, string>>(new Map());
+  const animationFrameRef = useRef<number | null>(null);
+
+  useGSAP(() => {
+    if (!rootRef.current) return;
+
+    const paragraph = rootRef.current.querySelector("p");
+    if (!paragraph) return;
+
+    const split = SplitText.create(paragraph, {
+      type: "chars",
+      charsClass: "char",
+    });
+    charsRef.current = split.chars;
+
+    // Set initial styles for each character
+    charsRef.current.forEach((char: Element) => {
+      gsap.set(char, {
+        display: 'inline-block',
+        color: color,
+        attr: { 'data-content': char.innerHTML },
+      });
+      // Initialize scrambled state for each character
+      currentScrambledStates.current.set(char, char.innerHTML);
+    });
+
+    // Function to generate a random scrambled character
+    const getRandomChar = () => {
+      return scrambleChars[Math.floor(Math.random() * scrambleChars.length)];
+    };
+
+    // Time-based scrambling function that only updates the scrambled states
+    const updateScrambledStates = () => {
+      if (!isMouseOverTextRef.current) return; // Only scramble when mouse is over text
+
+      charsRef.current.forEach((char: Element) => {
+        const originalChar = char.getAttribute('data-content') || "";
+        if (originalChar.trim() !== "") { // Don't scramble spaces
+          const scrambledChar = getRandomChar();
+          currentScrambledStates.current.set(char, scrambledChar);
+        }
+      });
+      
+      // Update the display if needed (only for characters currently being scrambled)
+      updateCharacterDisplay();
+    };
+
+    // Function to update character display based on current mouse position
+    const updateCharacterDisplay = () => {
+      if (!rootRef.current) return;
+
+      charsRef.current.forEach((char: Element) => {
+        const rect = char.getBoundingClientRect();
+        const charCenterX = rect.left + rect.width / 2;
+        const charCenterY = rect.top + rect.height / 2;
+        const dx = currentMousePosRef.current.x - charCenterX;
+        const dy = currentMousePosRef.current.y - charCenterY;
+        const dist = Math.hypot(dx, dy);
+
+        if (dist < radius && isMouseOverTextRef.current) {
+          // Show the scrambled state and set scramble color
+          const scrambledChar = currentScrambledStates.current.get(char) || char.innerHTML;
+          gsap.set(char, { 
+            innerHTML: scrambledChar,
+            color: scrambleColor 
+          });
+        } else {
+          // Show the original character and restore normal color
+          const originalChar = char.getAttribute('data-content') || "";
+          gsap.set(char, { 
+            innerHTML: originalChar,
+            color: color 
+          });
+        }
+      });
+    };
+
+    // Throttled mouse move handler using requestAnimationFrame
+    const handleMove = (e: PointerEvent) => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+
+      animationFrameRef.current = requestAnimationFrame(() => {
+        currentMousePosRef.current = { x: e.clientX, y: e.clientY };
+        setMousePos({ x: e.clientX, y: e.clientY });
+        updateCharacterDisplay();
+      });
+    };
+
+    // Mouse enter/leave handlers to control scrambling
+    const handleMouseEnter = () => {
+      isMouseOverTextRef.current = true;
+      setIsMouseOverText(true);
+      // Start scrambling interval when mouse enters
+      if (!scrambleIntervalRef.current) {
+        scrambleIntervalRef.current = setInterval(updateScrambledStates, scrambleInterval);
+      }
+    };
+
+    const handleMouseLeave = () => {
+      isMouseOverTextRef.current = false;
+      setIsMouseOverText(false);
+      // Stop scrambling interval when mouse leaves
+      if (scrambleIntervalRef.current) {
+        clearInterval(scrambleIntervalRef.current);
+        scrambleIntervalRef.current = null;
+      }
+      // Reset all characters to original state
+      charsRef.current.forEach((char: Element) => {
+        const originalChar = char.getAttribute('data-content') || "";
+        gsap.set(char, { 
+          innerHTML: originalChar,
+          color: color 
+        });
+      });
+    };
+
+    const el = rootRef.current;
+    el.addEventListener("pointermove", handleMove);
+    el.addEventListener("mouseenter", handleMouseEnter);
+    el.addEventListener("mouseleave", handleMouseLeave);
+
+    return () => {
+      el.removeEventListener("pointermove", handleMove);
+      el.removeEventListener("mouseenter", handleMouseEnter);
+      el.removeEventListener("mouseleave", handleMouseLeave);
+      
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+      
+      split.revert();
+      
+      // Clear the scrambling interval
+      if (scrambleIntervalRef.current) {
+        clearInterval(scrambleIntervalRef.current);
+      }
+      currentScrambledStates.current.clear();
+    };
+  }, [radius, duration, speed, scrambleChars, scrambleInterval, color, scrambleColor]);
+
+  return (
+    <div ref={rootRef} className={`text-block ${className}`} style={{ ...font, ...style }}>
+      <p style={{ margin: 0 }}>{text}</p>
+      
+      {/* Visual indicator circle around cursor - only show when mouse is over text */}
+      {isMouseOverText && (
+        <div
+          style={{
+            position: 'fixed',
+            left: mousePos.x - radius,
+            top: mousePos.y - radius,
+            width: radius * 2,
+            height: radius * 2,
+            border: '1px solid rgba(136, 85, 255, 0.3)',
+            borderRadius: '50%',
+            pointerEvents: 'none',
+            zIndex: 9999,
+            transition: 'opacity 0.2s ease',
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+// Clean demo component with predetermined values
+const ScrambleDemo = () => {
+  return (
+    <div style={{ 
+      minHeight: '100vh', 
+      padding: '2rem',
+      fontFamily: 'system-ui, -apple-system, sans-serif',
+      backgroundColor: '#0a0a0a',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: '8rem'
+    }}>
+      {/* Large heading demo */}
+      <ScrambledText
+        text="Hover over this text to see the scramble effect"
+        radius={120}
+        scrambleChars="!@#$%^&*()_+-={}[]|;:,.<>?"
+        scrambleInterval={300}
+        color="#ffffff"
+        scrambleColor="#ff6b6b"
+        font={{
+          fontSize: '4rem',
+          fontWeight: '800',
+          lineHeight: '1.1',
+          textAlign: 'center',
+          maxWidth: '900px',
+          letterSpacing: '-0.02em'
+        }}
+      />
+      
+      {/* Subtitle */}
+      <ScrambledText
+        text="Move your cursor around different parts of this text to see how the characters react within the radius area. The scrambling happens continuously while you hover."
+        radius={80}
+        scrambleChars=".:"
+        scrambleInterval={500}
+        color="#888888"
+        scrambleColor="#8855ff"
+        font={{
+          fontSize: '1.5rem',
+          lineHeight: '1.4',
+          textAlign: 'center',
+          maxWidth: '700px',
+          fontWeight: '300'
+        }}
+      />
+
+      {/* Code-style demo */}
+      <ScrambledText
+        text="const scrambleEffect = useGSAP(() => { /* Interactive magic happens here */ });"
+        radius={100}
+        scrambleChars={DEFAULT_SCRAMBLE_CHARS}
+        scrambleInterval={200}
+        color="#f5f5f5"
+        scrambleColor="#A36EFF"
+        font={{
+          fontSize: '1.1rem',
+          fontFamily: 'Monaco, Consolas, monospace',
+          backgroundColor: '#1e1e1e',
+          color: '#f5f5f5',
+          padding: '1.5rem',
+          borderRadius: '12px',
+          border: '1px solid #333'
+        }}
+      />
+    </div>
+  );
+};
+
+export default function Page() {
+  return <ScrambleDemo />;
+}

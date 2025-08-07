@@ -75,7 +75,7 @@ import {
     WebGPURenderer,
     MeshBasicNodeMaterial,
     PostProcessing, //@ts-ignore
-} from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/three-core-bundle/dist/bundle.js"
+} from "https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/3D-final.js"
 
 // @ts-ignore
 import {

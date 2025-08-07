@@ -3,3 +3,11 @@
 body {
   font-family: Arial, Helvetica, sans-serif;
 }
+
+:root {
+  --color-just-black: #000000;
+  --color-surface50: #6b7280;
+  --gradient-macha: linear-gradient(45deg, #4ade80, #22d3ee);
+  --gradient-summer-fair: linear-gradient(45deg, #fbbf24, #f87171);
+  --gradient-orange-crush: linear-gradient(45deg, #fb923c, #ec4899);
+}

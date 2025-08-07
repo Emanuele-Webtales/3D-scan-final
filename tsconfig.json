@@ -35,7 +35,7 @@
     ".next/types/**/*.ts",
     "next-env.d.ts",
     "Development/ScanEffect/types/**/*.ts"
-  ],
+, "missing-imports-bundle/dist/bundle.js"  ],
   "exclude": [
     "node_modules"
   ]

@@ -26,7 +26,7 @@
 
 'use client';
 
-import { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { motion, useAnimation, useMotionValue } from 'framer-motion';
 
 //-----------------------------------
@@ -35,14 +35,15 @@ import { motion, useAnimation, useMotionValue } from 'framer-motion';
 
 
 //Local development imports (for testing in Next.js)
+// Regular imports for React Three Fiber
 import { useAspect, useTexture } from '@react-three/drei';
-import { useFrame, Canvas, useThree, extend } from '@react-three/fiber';
-import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
-import { pass } from 'three/tsl';
+import { useFrame, Canvas, useThree } from '@react-three/fiber';
+//import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
+//import { pass } from 'three/tsl';
 
+// Regular imports for Three.js TSL
 import {
   abs,
-  blendScreen,
   float,
   Fn,
   max,
@@ -60,7 +61,14 @@ import {
   vec3,
 } from 'three/tsl';
 
-import * as THREE from 'three/webgpu';
+// Dynamic import for THREE to avoid SSR issues
+let THREE: any;
+
+if (typeof window !== 'undefined') {
+  import('three/webgpu').then((module) => {
+    THREE = module;
+  });
+}
 
 
 //-----------------------------------
@@ -109,7 +117,8 @@ import DEPTHMAP from '@/app/3D-scan/3D-scan-assets/depth-1.png';
 const WIDTH = 1600 ;
 const HEIGHT = 900;
 
-// Custom cross pattern function from effect3
+// Custom cross pattern function from effect3 - commented out to avoid Fn errors
+/*
 const sdCross = Fn(
   ([p_immutable, b_immutable, r_immutable]: any[]) => {
     const r = float(r_immutable).toVar();
@@ -127,6 +136,7 @@ const sdCross = Fn(
     return select(k.greaterThan(0.0), d, d.negate()).add(r);
   }
 );
+*/
 
 // Debug controls interface - defines all the properties we can control
 interface DebugControls {
@@ -136,7 +146,7 @@ interface DebugControls {
 	showControls: boolean;
 	
 	// Scan type and properties
-	scanType: 'gradient' | 'dots' | 'cross'; // Removed 'edge'
+	scanType: 'gradient'; // Only gradient for now - dots and cross commented out
 	scanColor: [number, number, number];
 	scanIntensity: number;
 	
@@ -181,6 +191,11 @@ const useIsMobile = () => {
 
 // Inline WebGPUCanvas component
 const WebGPUCanvas = (props: any) => {
+  // Check if THREE is available
+  if (!THREE) {
+    return <div>Loading THREE.js...</div>;
+  }
+  
   return (
     <Canvas
       {...props}
@@ -196,7 +211,8 @@ const WebGPUCanvas = (props: any) => {
   );
 };
 
-// Inline PostProcessing component
+// Inline PostProcessing component - commented out for compatibility
+/*
 const PostProcessing = ({
   strength = 1,
   threshold = 1,
@@ -210,9 +226,10 @@ const PostProcessing = ({
     const postProcessing = new THREE.PostProcessing(gl as any);
     const scenePass = pass(scene, camera);
     const scenePassColor = scenePass.getTextureNode('output');
-    const bloomPass = bloom(scenePassColor, strength, 0.5, threshold);
+    // const bloomPass = bloom(scenePassColor, strength, 0.5, threshold);
 
-    const final = scenePassColor.add(bloomPass);
+    // const final = scenePassColor.add(bloomPass);
+    const final = scenePassColor; // Remove bloom effect
 
     postProcessing.outputNode = final;
 
@@ -225,6 +242,7 @@ const PostProcessing = ({
 
   return null;
 };
+*/
 
 // Scene component that renders the 3D scanning effect
 // This component handles the Three.js material creation and uniform updates
@@ -278,6 +296,8 @@ const Scene = ({
 		let flow;
 		let mask;
 		
+		// Commenting out dots and crosses implementations to test gradient only
+		/*
 		if (controls.scanType === 'dots') {
 			// Dot-based scanning effect
 			const tiling = vec2(controls.tilingAmount);
@@ -295,7 +315,9 @@ const Scene = ({
 			// Apply color and intensity (reduced impact for dots mode)
 			const dotsIntensity = controls.scanIntensity * 0.5;
 			mask = dot.mul(flow).mul(vec3(...controls.scanColor)).mul(dotsIntensity);
-		} else if (controls.scanType === 'gradient') {
+		} else
+		*/
+		if (controls.scanType === 'gradient') {
 			// Gradient line mode - central band at full opacity, linear falloff to 0.05
 			const gradientWidth = float(controls.gradientWidth);
 			
@@ -337,7 +359,9 @@ const Scene = ({
 			// Apply color and intensity (reduced impact for gradient mode)
 			const reducedIntensity = controls.scanIntensity * 0.04;
 			mask = opacity.mul(vec3(...controls.scanColor)).mul(reducedIntensity);
-		} else if (controls.scanType === 'cross') {
+		} 
+		/*
+		else if (controls.scanType === 'cross') {
 			// Cross pattern mode
 			const tiling = vec2(controls.tilingAmount);
 			const tiledUv = mod(tUv.mul(tiling), 2.0).sub(1.0);
@@ -351,11 +375,12 @@ const Scene = ({
 			const crossIntensity = controls.scanIntensity * 0.1;
 			mask = oneMinus(cross).mul(flow).mul(vec3(...controls.scanColor)).mul(crossIntensity);
 		}
+		*/
 
 		// Blend the original texture with the scanning mask
-		// blendScreen creates a bright overlay effect
+		// Simple addition instead of blendScreen for compatibility
 		//@ts-ignore
-		const final = blendScreen(tMap, mask);
+		const final = tMap.add(mask);
 
 		// Create the material that will render our effect
 		// MeshBasicNodeMaterial is a material that uses node-based shaders
@@ -515,7 +540,7 @@ const DebugPanel = ({
 								}}>Type</label>
 								<select
 									value={controls.scanType}
-									onChange={(e) => updateControl('scanType', e.target.value as 'gradient' | 'dots' | 'cross')}
+									onChange={(e) => updateControl('scanType', e.target.value as 'gradient')}
 									style={{
 										width: '100%',
 										backgroundColor: '#374151',
@@ -527,8 +552,8 @@ const DebugPanel = ({
 									}}
 								>
 									<option value="gradient">Gradient</option>
-									<option value="dots">Dots</option>
-									<option value="cross">Cross</option>
+									{/* <option value="dots">Dots</option> */}
+									{/* <option value="cross">Cross</option> */}
 								</select>
 							</div>
 							
@@ -625,6 +650,7 @@ const DebugPanel = ({
 								</div>
 							)}
 
+							{/* Dots controls commented out
 							{controls.scanType === 'dots' && (
 								<div>
 									<label style={{
@@ -643,7 +669,9 @@ const DebugPanel = ({
 									/>
 								</div>
 							)}
+							*/}
 
+							{/* Cross controls commented out
 							{controls.scanType === 'cross' && (
 								<>
 									<div>
@@ -680,6 +708,7 @@ const DebugPanel = ({
 									</div>
 								</>
 							)}
+							*/}
 						</div>
 					</div>
 
@@ -1120,7 +1149,7 @@ const Html = () => {
 
 				{/* Three.js canvas with progress control */}
 				<WebGPUCanvas>
-					<PostProcessing />
+					{/* <PostProcessing /> */}
 					{/* Pass the progress value and controls to the Scene component */}
 					<Scene progress={progress} controls={controls} />
 				</WebGPUCanvas>
@@ -1158,8 +1187,25 @@ const Html = () => {
 	);
 };
 
+// Client-side only component wrapper
+function ClientOnly({ children }: { children: React.ReactNode }) {
+	const [isClient, setIsClient] = React.useState(false);
+
+	React.useEffect(() => {
+		setIsClient(true);
+	}, []);
+
+	if (!isClient) {
+		return <div>Loading...</div>;
+	}
+
+	return <>{children}</>;
+}
+
 export default function Home() {
 	return (
-		<Html />
+		<ClientOnly>
+			<Html />
+		</ClientOnly>
 	);
 }

@@ -106,7 +106,7 @@ import {
     MeshBasicMaterial, 
     MeshBasicNodeMaterial 
  } //@ts-ignore
- from 'https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/3D-final.js';
+ from 'https://cdn.jsdelivr.net/gh/Emanuele-Webtales/npm-bundles/last-bundle.js';
 
 
 

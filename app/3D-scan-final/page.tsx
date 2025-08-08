@@ -91,7 +91,9 @@ addPropertyControls(Home, {
     backgroundMode: {
         type: ControlType.Boolean,
         title: "Background",
-        defaultValue: false, // false = Color, true = Image
+        defaultValue: false, // false = Color, true = Image,
+        enabledTitle: "Image",
+        disabledTitle: "Color",
     },
     textureMap: {
         type: ControlType.ResponsiveImage,
@@ -106,10 +108,12 @@ addPropertyControls(Home, {
     },
     effectType: {
         type: ControlType.Enum,
-        title: "Type",
+        title: "Effect",
         options: ["gradient", "dots"],
         optionTitles: ["Gradient", "Dots"],
         defaultValue: "gradient",
+        displaySegmentedControl: true,
+        segmentedControlDirection: "horizontal",
     },
     dotColor: {
         type: ControlType.Color,
@@ -291,6 +295,27 @@ export const ContextProvider: React.FC<ContextProviderProps> = ({
     )
 }
 
+// Minimal color resolver for Framer CSS variables like:
+// var(--token-xxxx, #331616) → "#331616"
+const cssVariableRegex =
+    /var\s*\(\s*(--[\w-]+)(?:\s*,\s*((?:[^)(]+|\((?:[^)(]+|\([^)(]*\))*\))*))?\s*\)/
+
+function extractDefaultValue(cssVar: string): string {
+    if (!cssVar || !cssVar.startsWith("var(")) return cssVar
+    const match = cssVariableRegex.exec(cssVar)
+    if (!match) return cssVar
+    const fallback = (match[2] || "").trim()
+    // If the fallback itself is another var(), resolve recursively
+    if (fallback.startsWith("var(")) return extractDefaultValue(fallback)
+    return fallback || cssVar
+}
+
+function resolveTokenColor(input: any): any {
+    if (typeof input !== "string") return input
+    if (!input.startsWith("var(")) return input
+    return extractDefaultValue(input)
+}
+
 // WebGPUCanvas Component
 export const WebGPUCanvas = (props: any) => {
     return (
@@ -375,11 +400,15 @@ const Scene = ({
 
     // Log dotColor changes (not every frame!) - removed for performance
 
-    // Convert Framer image objects to URLs
-    const textureMapUrl =
-        textureMap?.src ||
-        textureMap ||
-        "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzMzNzNkYyIvPjx0ZXh0IHg9IjUwIiB5PSI1NSIgZm9udC1zaXplPSIxNiIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkltYWdlPC90ZXh0Pjwvc3ZnPg=="
+    // Determine whether a real texture image was provided
+    const hasTextureMapProp = !!(
+        textureMap && (textureMap.src || typeof textureMap === "string")
+    )
+
+    // Convert Framer image objects to URLs. Use a 1x1 transparent data URI as safe fallback.
+    const textureMapUrl = hasTextureMapProp
+        ? textureMap?.src || textureMap
+        : "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
     const depthMapUrl =
         depthMap?.src ||
         depthMap ||
@@ -398,9 +427,7 @@ const Scene = ({
 
     // Determine which provided asset should drive aspect ratio. If the user did not
     // provide a texture map, ignore the placeholder texture and use the real depth map.
-    const hasTextureMapProp = !!(
-        textureMap && (textureMap.src || typeof textureMap === "string")
-    )
+    // hasTextureMapProp already computed above
     const aspectSourceTexture = hasTextureMapProp ? rawMap : depthMapTexture
     const imageAspectRatio = useImageAspectRatio(aspectSourceTexture)
 
@@ -452,7 +479,7 @@ const Scene = ({
         uProgress: { value: 0 },
         uDepthMap: { value: null as any },
         uColor: { value: new Vector3(0, 1, 0) },
-        uEffectType: { value: effectType === "dots" ? 0.0 : 1.0 }, // Initialize with correct effect type
+        uEffectType: { value: effectType === "dots" ? 0.0 : 1.0 },
         uDotSize: { value: dotSize },
         uTilingScale: { value: tilingScale },
         uGradientWidth: { value: gradientWidth },
@@ -485,7 +512,7 @@ const Scene = ({
     const prevValuesRef = useRef({
         progress: -1,
         dotColor: "",
-        effectType: "",
+        effectType: "gradient" as "dots" | "gradient",
         dotSize: -1,
         tilingScale: -1,
         gradientWidth: -1,
@@ -601,8 +628,8 @@ const Scene = ({
 
     return (
         <>
-            {/* Base layer - either texture image or background color */}
-            {showTexture ? (
+            {/* Base layer - either texture image (only if provided) or background color */}
+            {showTexture && hasTextureMapProp ? (
                 <mesh scale={[scaleX, scaleY, 1]} material={material}>
                     <planeGeometry />
                 </mesh>
@@ -813,7 +840,10 @@ const Html = ({
     const intensity = propIntensity ?? 1.0
     const backgroundMode = propBackgroundMode ?? !!deprecatedShowTexture // true = Image, false = Color
     const showTexture = backgroundMode
-    const backgroundColor = propBackgroundColor ?? "#000000"
+    const rawBackgroundColor = propBackgroundColor ?? "#000000"
+    const rawDotColor = dotColor ?? "#ffffff"
+    const resolvedDotColor = resolveTokenColor(rawDotColor)
+    const resolvedBackgroundColor = resolveTokenColor(rawBackgroundColor)
 
     // Extract nested object props with defaults
     const dotSize = propDots?.size ?? 0.1
@@ -1123,10 +1153,10 @@ const Html = ({
         }
     }
 
-    // Debug logs removed for performance
+    
 
     return (
-        <div style={{ height: "100%", width: "100%" }}>
+        <div style={{ height: "100%", width: "100%", display: "flex", justifyContent: "center", alignItems: "center" }}>
             <div
                 style={{ height: "100%" }}
                 ref={containerRef}
@@ -1154,7 +1184,7 @@ const Html = ({
                     <PostProcessing></PostProcessing>
                     <Scene
                         dotSize={dotSize}
-                        dotColor={dotColor || "#ffffff"}
+                        dotColor={resolvedDotColor || "#ffffff"}
                         tilingScale={tilingScale}
                         effectType={effectType}
                         gradientWidth={gradientWidth / 10}
@@ -1162,7 +1192,7 @@ const Html = ({
                         bloomStrength={bloomStrength}
                         bloomRadius={bloomRadius}
                         showTexture={showTexture}
-                        backgroundColor={backgroundColor}
+                        backgroundColor={resolvedBackgroundColor || "#000000"}
                         progress={progress}
                         textureMap={textureMap}
                         depthMap={depthMap}

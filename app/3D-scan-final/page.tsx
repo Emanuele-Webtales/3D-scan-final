@@ -1146,10 +1146,9 @@ const Html = ({
         setIsHovering(false)
         setIsTransitioning(false)
 
-        if ((propAnimation?.play ?? "once") === "loop") {
-            // Start the loop immediately from the current progress position
-            startLoop(currentProgress, true)
-        }
+        // Resume animation to completion from current progress.
+        // In Loop mode it continues looping; in Once it completes to 1 and stops.
+        startLoop(currentProgress, true)
     }
 
     

@@ -18,14 +18,14 @@ function PixelateSvgFilter({
     crossLayers = false,
 }: PixelateSvgFilterProps) {
     return (
-        <svg 
-            style={{ 
+        <svg
+            style={{
                 userSelect: "none",
                 position: "absolute",
                 width: 0,
                 height: 0,
                 overflow: "hidden",
-                pointerEvents: "none"
+                pointerEvents: "none",
             }}
         >
             <defs>
@@ -223,7 +223,6 @@ export default function PixelateComponent(props: any) {
     const shouldShowMedia = Boolean(mediaSrc) && !mediaError
 
     // Note: Do NOT early-return based on media presence to keep hooks order stable in canvas
-    
 
     // Calculate pixelation range based on strength
     const getPixelationRange = () => {
@@ -247,6 +246,12 @@ export default function PixelateComponent(props: any) {
     const smoothedPixelation = useTransform(pixelationSize, (value) =>
         Math.max(minPixelation, Math.min(maxPixelation, value))
     )
+
+    // Ensure clear image outside hover in pixelate mode (render-time guard)
+    const renderPixelation =
+        pixelateMode === "pixelate" && !isHovering
+            ? minPixelation
+            : smoothedPixelation.get()
 
     // Calculate distance from center and update pixelation
     const updatePixelation = useCallback(
@@ -379,27 +384,24 @@ export default function PixelateComponent(props: any) {
         getInitialPixelation,
     ])
 
-
-
     return (
-        
-            <motion.div
-                ref={containerRef}
-                style={{
-                    position: "relative",
-                    width: "100%",
-                    height: "100%",
-                    overflow: "hidden",
-                    userSelect: "none",
-                    display: "flex",
-                    boxSizing: "border-box",
-                    //border: "1px solid red",
-                }}
-                onMouseMove={handleMouseMove}
-                onMouseEnter={handleMouseEnter}
-                onMouseLeave={handleMouseLeave}
-            >
-                        {/* Invisible sizing element - provides intrinsic dimensions for Fit sizing */}
+        <motion.div
+            ref={containerRef}
+            style={{
+                position: "relative",
+                width: "100%",
+                height: "100%",
+                overflow: "hidden",
+                userSelect: "none",
+                display: "flex",
+                boxSizing: "border-box",
+                //border: "1px solid red",
+            }}
+            onMouseMove={handleMouseMove}
+            onMouseEnter={handleMouseEnter}
+            onMouseLeave={handleMouseLeave}
+        >
+            {/* Invisible sizing element - provides intrinsic dimensions for Fit sizing */}
             <div
                 style={{
                     width: "400px",
@@ -417,20 +419,28 @@ export default function PixelateComponent(props: any) {
             />
 
             {/* SVG Filter - only render on non-mobile and non-canvas when pixelation > 1 */}
-            {!isMobile && !isCanvas && smoothedPixelation.get() > 1 && (
+            {!isMobile && !isCanvas && renderPixelation > 1 && (
                 <PixelateSvgFilter
                     id={filterIdRef.current}
-                    size={smoothedPixelation.get()}
+                    size={renderPixelation}
                     crossLayers={false}
                 />
             )}
-         
-                    
-                               
 
             {/* Empty state message */}
             {!shouldShowMedia && (
-                <div style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 3 }}>
+                <div
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        width: "100%",
+                        height: "100%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        zIndex: 3,
+                    }}
+                >
                     <ComponentMessage
                         title="Pixelate Component"
                         subtitle={`Set up the component by adding ${useVideo ? "video" : "image"} to the component properties.`}
@@ -439,44 +449,45 @@ export default function PixelateComponent(props: any) {
             )}
 
             {/* Base unfiltered media */}
-            {shouldShowMedia && (useVideo ? (
-                <motion.video
-                    key={mediaSrc as string}
-                    src={mediaSrc as string}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    style={{
-                        position: "absolute",
-                        inset: -(props.strength / 100) * 50,
-                        width: `calc(100% + ${(props.strength / 100) * 100}px)`,
-                        height: `calc(100% + ${(props.strength / 100) * 100}px)`,
-                        objectFit: "cover",
-                        backgroundPosition: "center center",
-                        zIndex: 1,
-                        userSelect: "none",
-                    }}
-                    onError={() => setMediaError(true)}
-                />
-            ) : (
-                <motion.img
-                    key={mediaSrc as string}
-                    src={mediaSrc as string}
-                    alt={image?.alt || "Base image"}
-                    style={{
-                        position: "absolute",
-                        inset: -(props.strength / 100) * 50,
-                        width: `calc(100% + ${(props.strength / 100) * 100}px)`,
-                        height: `calc(100% + ${(props.strength / 100) * 100}px)`,
-                        objectFit: "cover",
-                        backgroundPosition: "center center",
-                        zIndex: 1,
-                        userSelect: "none",
-                    }}
-                    onError={() => setMediaError(true)}
-                />
-            ))}
+            {shouldShowMedia &&
+                (useVideo ? (
+                    <motion.video
+                        key={mediaSrc as string}
+                        src={mediaSrc as string}
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        style={{
+                            position: "absolute",
+                            inset: -(props.strength / 100) * 50,
+                            width: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                            height: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                            objectFit: "cover",
+                            backgroundPosition: "center center",
+                            zIndex: 1,
+                            userSelect: "none",
+                        }}
+                        onError={() => setMediaError(true)}
+                    />
+                ) : (
+                    <motion.img
+                        key={mediaSrc as string}
+                        src={mediaSrc as string}
+                        alt={image?.alt || "Base image"}
+                        style={{
+                            position: "absolute",
+                            inset: -(props.strength / 100) * 50,
+                            width: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                            height: `calc(100% + ${(props.strength / 100) * 100}px)`,
+                            objectFit: "cover",
+                            backgroundPosition: "center center",
+                            zIndex: 1,
+                            userSelect: "none",
+                        }}
+                        onError={() => setMediaError(true)}
+                    />
+                ))}
 
             {/* Filtered media with opacity transition - only on non-mobile */}
             {shouldShowMedia && !isMobile && useVideo ? (
@@ -495,20 +506,17 @@ export default function PixelateComponent(props: any) {
                         objectFit: "cover",
                         backgroundPosition: "center center",
                         filter:
-                            smoothedPixelation.get() > 1
+                            renderPixelation > 1
                                 ? `url(#${filterIdRef.current})`
                                 : "none",
                         zIndex: 2,
                         userSelect: "none",
                         opacity:
-                            isCanvas || smoothedPixelation.get() <= 1
+                            isCanvas || renderPixelation <= 1
                                 ? 0
                                 : Math.min(
                                       1,
-                                      Math.max(
-                                          0,
-                                          (smoothedPixelation.get() - 1) / 8
-                                      )
+                                      Math.max(0, (renderPixelation - 1) / 8)
                                   ),
                         transition: "opacity 0.1s ease-out",
                     }}
@@ -527,28 +535,24 @@ export default function PixelateComponent(props: any) {
                         objectFit: "cover",
                         backgroundPosition: "center center",
                         filter:
-                            smoothedPixelation.get() > 1
+                            renderPixelation > 1
                                 ? `url(#${filterIdRef.current})`
                                 : "none",
                         zIndex: 2,
                         userSelect: "none",
                         opacity:
-                            isCanvas || smoothedPixelation.get() <= 1
+                            isCanvas || renderPixelation <= 1
                                 ? 0
                                 : Math.min(
                                       1,
-                                      Math.max(
-                                          0,
-                                          (smoothedPixelation.get() - 1) / 8
-                                      )
+                                      Math.max(0, (renderPixelation - 1) / 8)
                                   ),
                         transition: "opacity 0.1s ease-out",
                     }}
                     onError={() => setMediaError(true)}
                 />
             ) : null}
-            </motion.div>
-       
+        </motion.div>
     )
 }
 
@@ -567,7 +571,7 @@ PixelateComponent.defaultProps = {
 addPropertyControls(PixelateComponent, {
     useVideo: {
         type: ControlType.Boolean,
-        title: "Use Video",
+        title: "Media",
         defaultValue: false,
         enabledTitle: "Video",
         disabledTitle: "Image",

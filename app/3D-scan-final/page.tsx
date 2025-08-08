@@ -30,16 +30,7 @@ import { animate } from "framer-motion"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
 import { ComponentMessage } from "https://framer.com/m/Utils-FINc.js"
 
-
-/**
- * @framerDisableUnlink
- * @framerSupportedLayoutWidth 600
- * @framerSupportedLayoutHeight 300
- */
-
 // Dynamic aspect ratio will be calculated from the actual images
-
-
 
 // Mobile/touch detection hook
 const useIsMobile = () => {
@@ -117,9 +108,9 @@ addPropertyControls(Home, {
         min: 0.1,
         max: 5.0,
         step: 0.1,
-        defaultValue: 1.0,
+        defaultValue: 1.5,
     },
-    
+
     gradient: {
         type: ControlType.Object,
         title: "Gradient",
@@ -131,7 +122,7 @@ addPropertyControls(Home, {
                 min: 0.0,
                 max: 5.0,
                 step: 0.1,
-                defaultValue: 0.5,
+                defaultValue: 1.6,
             },
             bloomStrength: {
                 type: ControlType.Number,
@@ -139,7 +130,7 @@ addPropertyControls(Home, {
                 min: 0.0,
                 max: 1.0,
                 step: 0.01,
-                defaultValue: 0.15,
+                defaultValue: 0.49,
             },
             bloomRadius: {
                 type: ControlType.Number,
@@ -147,7 +138,7 @@ addPropertyControls(Home, {
                 min: 0.0001,
                 max: 0.01,
                 step: 0.0001,
-                defaultValue: 0.001,
+                defaultValue: 0.0053,
             },
         },
     },
@@ -225,6 +216,8 @@ addPropertyControls(Home, {
     hover: {
         type: ControlType.Object,
         title: "Hover",
+        description:
+            "More components at [Framer University](https://frameruni.link/cc).",
         controls: {
             enabled: {
                 type: ControlType.Boolean,
@@ -234,8 +227,22 @@ addPropertyControls(Home, {
             direction: {
                 type: ControlType.Enum,
                 title: "Direction",
-                options: ["topToBottom", "bottomToTop", "leftToRight", "rightToLeft", "centerOutward", "outwardToCenter"],
-                optionTitles: ["Top Down", "Bottom Up", "Left Right", "Right Left", "Center Out", "Out Center"],
+                options: [
+                    "topToBottom",
+                    "bottomToTop",
+                    "leftToRight",
+                    "rightToLeft",
+                    "centerOutward",
+                    "outwardToCenter",
+                ],
+                optionTitles: [
+                    "Top Down",
+                    "Bottom Up",
+                    "Left Right",
+                    "Right Left",
+                    "Center Out",
+                    "Out Center",
+                ],
                 defaultValue: "topToBottom",
                 hidden: (props) => !props.enabled,
             },
@@ -319,67 +326,6 @@ export const PostProcessing = ({
     return null
 }
 
-// UI Controls Component - now only for debugging/development
-interface UIControlsProps {
-    isVisible: boolean
-    setIsVisible: (value: boolean) => void
-}
-
-const UIControls = ({
-    isVisible,
-    setIsVisible,
-}: UIControlsProps) => {
-    if (!isVisible) return null
-
-    return (
-        <div
-            style={{
-                position: "fixed",
-                top: "20px",
-                left: "20px",
-                background: "rgba(0, 0, 0, 0.6)",
-                padding: "20px",
-                borderRadius: "24px",
-                color: "white",
-                fontFamily: "monospace",
-                textTransform: "uppercase",
-                fontSize: "13px",
-                backdropFilter: "blur(10px)",
-                zIndex: 1000,
-                border: "1px solid rgba(255, 255, 255, 0.1)",
-                minWidth: "250px",
-            }}
-        >
-            <h3 style={{ margin: "0 0 15px 0", fontSize: "16px" }}>
-                Development Controls
-            </h3>
-            
-            <p style={{ fontSize: "12px", color: "rgba(255, 255, 255, 0.7)", margin: "0 0 15px 0" }}>
-                All effect controls are now available in Framer's property panel. This panel is for development only.
-            </p>
-
-
-
-
-
-            <button
-                onClick={() => setIsVisible(false)}
-                style={{
-                    background: "rgba(255, 255, 255, 0.2)",
-                    border: "1px solid rgba(255, 255, 255, 0.3)",
-                    color: "white",
-                    padding: "8px 12px",
-                    borderRadius: "5px",
-                    cursor: "pointer",
-                    fontSize: "12px",
-                }}
-            >
-                Hide Controls
-            </button>
-        </div>
-    )
-}
-
 interface SceneProps {
     dotSize: number
     dotColor: string
@@ -441,28 +387,28 @@ const Scene = ({
 
     // Memoized color conversion - only recalculates when dotColor changes
     const rgbColor = useMemo(() => {
-    const hexToRgb = (hex: string) => {
-        // Handle rgb() format
-        const rgbMatch = hex.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
-        if (rgbMatch) {
+        const hexToRgb = (hex: string) => {
+            // Handle rgb() format
+            const rgbMatch = hex.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
+            if (rgbMatch) {
                 return {
-                r: parseInt(rgbMatch[1]) / 255,
-                g: parseInt(rgbMatch[2]) / 255,
-                b: parseInt(rgbMatch[3]) / 255,
+                    r: parseInt(rgbMatch[1]) / 255,
+                    g: parseInt(rgbMatch[2]) / 255,
+                    b: parseInt(rgbMatch[3]) / 255,
+                }
             }
-        }
-        
-        // Handle hex format
-        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+
+            // Handle hex format
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
             return result
-            ? {
-                  r: parseInt(result[1], 16) / 255,
-                  g: parseInt(result[2], 16) / 255,
-                  b: parseInt(result[3], 16) / 255,
-              }
-            : { r: 1, g: 0, b: 0 }
-    }
-        
+                ? {
+                      r: parseInt(result[1], 16) / 255,
+                      g: parseInt(result[2], 16) / 255,
+                      b: parseInt(result[3], 16) / 255,
+                  }
+                : { r: 1, g: 0, b: 0 }
+        }
+
         return hexToRgb(dotColor || "#ffffff")
     }, [dotColor])
 
@@ -500,18 +446,18 @@ const Scene = ({
     // Calculate responsive scaling for COVER behavior - image fills entire container
     const { width: scaleX, height: scaleY } = useMemo(() => {
         const viewportAspectRatio = viewport.width / viewport.height
-        
+
         if (imageAspectRatio > viewportAspectRatio) {
             // Image is wider than viewport - scale to fill viewport height (image will be cropped on sides)
             return {
                 width: viewport.height * imageAspectRatio,
-                height: viewport.height
+                height: viewport.height,
             }
         } else {
             // Image is taller than viewport - scale to fill viewport width (image will be cropped on top/bottom)
             return {
                 width: viewport.width,
-                height: viewport.width / imageAspectRatio
+                height: viewport.width / imageAspectRatio,
             }
         }
     }, [viewport.width, viewport.height, imageAspectRatio])
@@ -519,8 +465,8 @@ const Scene = ({
     // Store previous values to avoid unnecessary uniform updates
     const prevValuesRef = useRef({
         progress: -1,
-        dotColor: '',
-        effectType: '',
+        dotColor: "",
+        effectType: "",
         dotSize: -1,
         tilingScale: -1,
         gradientWidth: -1,
@@ -532,7 +478,7 @@ const Scene = ({
     // Initialize uniforms properly for both canvas and live environments
     useEffect(() => {
         const effectTypeValue = effectType === "dots" ? 0.0 : 1.0
-        
+
         // Set initial uniforms - this ensures canvas environment shows correct values
         uniformsRef.current.uProgress.value = progress
         uniformsRef.current.uColor.value.set(rgbColor.r, rgbColor.g, rgbColor.b)
@@ -543,14 +489,26 @@ const Scene = ({
         uniformsRef.current.uIntensity.value = intensity
         uniformsRef.current.uBloomStrength.value = bloomStrength
         uniformsRef.current.uBloomRadius.value = bloomRadius
-        
+
         if (depthMapTexture) {
             uniformsRef.current.uDepthMap.value = depthMapTexture
         }
 
         // Update aspect ratio uniform
         uniformsRef.current.uAspectRatio.value = imageAspectRatio
-    }, [progress, rgbColor, effectType, dotSize, tilingScale, gradientWidth, intensity, bloomStrength, bloomRadius, depthMapTexture, imageAspectRatio])
+    }, [
+        progress,
+        rgbColor,
+        effectType,
+        dotSize,
+        tilingScale,
+        gradientWidth,
+        intensity,
+        bloomStrength,
+        bloomRadius,
+        depthMapTexture,
+        imageAspectRatio,
+    ])
 
     // Update uniforms for the effects shader - optimized to only update when values change
     useFrame(() => {
@@ -559,18 +517,22 @@ const Scene = ({
         if (RenderTarget.current() === RenderTarget.canvas) {
             return
         }
-        
+
         const prev = prevValuesRef.current
         const effectTypeValue = effectType === "dots" ? 0.0 : 1.0
 
         // Only update uniforms that have actually changed
         if (prev.progress !== progress) {
-        uniformsRef.current.uProgress.value = progress
+            uniformsRef.current.uProgress.value = progress
             prev.progress = progress
         }
 
         if (prev.dotColor !== dotColor) {
-        uniformsRef.current.uColor.value.set(rgbColor.r, rgbColor.g, rgbColor.b)
+            uniformsRef.current.uColor.value.set(
+                rgbColor.r,
+                rgbColor.g,
+                rgbColor.b
+            )
             prev.dotColor = dotColor
         }
 
@@ -580,16 +542,16 @@ const Scene = ({
         }
 
         if (prev.dotSize !== dotSize) {
-        uniformsRef.current.uDotSize.value = dotSize
+            uniformsRef.current.uDotSize.value = dotSize
             prev.dotSize = dotSize
         }
 
         if (prev.tilingScale !== tilingScale) {
-        uniformsRef.current.uTilingScale.value = tilingScale
+            uniformsRef.current.uTilingScale.value = tilingScale
             prev.tilingScale = tilingScale
         }
 
-                if (prev.gradientWidth !== gradientWidth) {
+        if (prev.gradientWidth !== gradientWidth) {
             uniformsRef.current.uGradientWidth.value = gradientWidth
             prev.gradientWidth = gradientWidth
         }
@@ -600,12 +562,12 @@ const Scene = ({
         }
 
         if (prev.bloomStrength !== bloomStrength) {
-        uniformsRef.current.uBloomStrength.value = bloomStrength
+            uniformsRef.current.uBloomStrength.value = bloomStrength
             prev.bloomStrength = bloomStrength
         }
 
         if (prev.bloomRadius !== bloomRadius) {
-        uniformsRef.current.uBloomRadius.value = bloomRadius
+            uniformsRef.current.uBloomRadius.value = bloomRadius
             prev.bloomRadius = bloomRadius
         }
 
@@ -632,7 +594,11 @@ const Scene = ({
             )}
 
             {/* Effects overlay mesh */}
-            <mesh scale={[scaleX, scaleY, 1]} position={[0, 0, 0.01]} ref={materialRef}>
+            <mesh
+                scale={[scaleX, scaleY, 1]}
+                position={[0, 0, 0.01]}
+                ref={materialRef}
+            >
                 <planeGeometry />
                 <shaderMaterial
                     transparent={true}
@@ -788,28 +754,34 @@ const Html = ({
     showTexture?: boolean
     backgroundColor?: string
     gradient?: {
-        width?: number;
-        bloomStrength?: number;
-        bloomRadius?: number;
+        width?: number
+        bloomStrength?: number
+        bloomRadius?: number
     }
     dots?: {
-        size?: number;
-        tiling?: number;
-        bloomStrength?: number;
-        bloomRadius?: number;
+        size?: number
+        tiling?: number
+        bloomStrength?: number
+        bloomRadius?: number
     }
     loop?: {
-        enabled?: boolean;
-        type?: "oneShot" | "repeat" | "mirror";
-        transition?: any; // Full Framer Motion transition object
+        enabled?: boolean
+        type?: "oneShot" | "repeat" | "mirror"
+        transition?: any // Full Framer Motion transition object
     }
     hover?: {
-        enabled?: boolean;
-        direction?: "topToBottom" | "bottomToTop" | "leftToRight" | "rightToLeft" | "centerOutward" | "outwardToCenter";
+        enabled?: boolean
+        direction?:
+            | "topToBottom"
+            | "bottomToTop"
+            | "leftToRight"
+            | "rightToLeft"
+            | "centerOutward"
+            | "outwardToCenter"
     }
 }) => {
     // Debug logs removed for performance
-    
+
     const { isLoading } = useContext(GlobalContext)
     const isMobile = useIsMobile()
 
@@ -820,17 +792,17 @@ const Html = ({
     const intensity = propIntensity ?? 1.0
     const showTexture = propShowTexture ?? false
     const backgroundColor = propBackgroundColor ?? "#000000"
-    
+
     // Extract nested object props with defaults
     const dotSize = propDots?.size ?? 0.1
     const tilingScale = propDots?.tiling ?? 50
     const dotsBloomStrength = propDots?.bloomStrength ?? 0.15
     const dotsBloomRadius = propDots?.bloomRadius ?? 0.001
-    
+
     const gradientWidth = propGradient?.width ?? 0.5
     const gradientBloomStrength = propGradient?.bloomStrength ?? 0.15
     const gradientBloomRadius = propGradient?.bloomRadius ?? 0.001
-    
+
     const loopEnabled = propLoop?.enabled ?? false
     const loopType = propLoop?.type ?? "repeat"
     const loopTransition = propLoop?.transition ?? {
@@ -838,14 +810,16 @@ const Html = ({
         duration: 3,
         ease: "easeInOut",
     }
-    
+
     const hoverEnabled = propHover?.enabled ?? !isMobile
     const progressDirection = propHover?.direction ?? "topToBottom"
-    
+
     // Use appropriate bloom values based on effect type
-    const bloomStrength = effectType === "dots" ? dotsBloomStrength : gradientBloomStrength
-    const bloomRadius = effectType === "dots" ? dotsBloomRadius : gradientBloomRadius
-    
+    const bloomStrength =
+        effectType === "dots" ? dotsBloomStrength : gradientBloomStrength
+    const bloomRadius =
+        effectType === "dots" ? dotsBloomRadius : gradientBloomRadius
+
     // UI state that remains as state (not exposed as property controls)
     const [isVisible, setIsVisible] = useState(true)
 
@@ -862,9 +836,18 @@ const Html = ({
 
     // Loop animation function - defined outside useEffect so it can be called from hover handlers
     const startLoop = (startFrom = 0, forceProgressUpdate = false) => {
-        console.log("startLoop called with startFrom:", startFrom, "forceProgressUpdate:", forceProgressUpdate)
-        
-        if (!loopEnabled || RenderTarget.current() === RenderTarget.canvas || isLoading) {
+        console.log(
+            "startLoop called with startFrom:",
+            startFrom,
+            "forceProgressUpdate:",
+            forceProgressUpdate
+        )
+
+        if (
+            !loopEnabled ||
+            RenderTarget.current() === RenderTarget.canvas ||
+            isLoading
+        ) {
             if (animationControlsRef.current) {
                 animationControlsRef.current.stop()
                 animationControlsRef.current = null
@@ -888,11 +871,14 @@ const Html = ({
                 onUpdate: (latest) => {
                     setLoopProgress(latest)
                     // Only set the main progress if not hovering and not transitioning, or if forcing update
-                    if (forceProgressUpdate || (!isHovering && !isTransitioning)) {
+                    if (
+                        forceProgressUpdate ||
+                        (!isHovering && !isTransitioning)
+                    ) {
                         setProgress(latest)
                     }
                 },
-    })
+            })
         } else if (loopType === "repeat") {
             const animateForward = (currentValue = startFrom) => {
                 animationControlsRef.current = animate(currentValue, 1, {
@@ -900,7 +886,10 @@ const Html = ({
                     onUpdate: (latest) => {
                         setLoopProgress(latest)
                         // Only set the main progress if not hovering and not transitioning
-                        if (forceProgressUpdate || (!isHovering && !isTransitioning)) {
+                        if (
+                            forceProgressUpdate ||
+                            (!isHovering && !isTransitioning)
+                        ) {
                             setProgress(latest)
                         }
                     },
@@ -915,7 +904,7 @@ const Html = ({
         } else if (loopType === "mirror") {
             let direction = startFrom < 0.5 ? 1 : -1 // Determine direction based on start position
             let currentValue = startFrom
-            
+
             const animateMirror = () => {
                 const target = direction === 1 ? 1 : 0
                 animationControlsRef.current = animate(currentValue, target, {
@@ -924,7 +913,10 @@ const Html = ({
                         currentValue = latest
                         setLoopProgress(latest)
                         // Only set the main progress if not hovering and not transitioning, or if forcing update
-                        if (forceProgressUpdate || (!isHovering && !isTransitioning)) {
+                        if (
+                            forceProgressUpdate ||
+                            (!isHovering && !isTransitioning)
+                        ) {
                             setProgress(latest)
                         }
                     },
@@ -944,7 +936,7 @@ const Html = ({
     useEffect(() => {
         // Only auto-start loop if we're not hovering (prevents flash when mouse leaves)
         if (!isHovering) {
-            startLoop(0,false)
+            startLoop(0, false)
         }
 
         return () => {
@@ -957,7 +949,12 @@ const Html = ({
 
     // Handle hover state changes for loop animation control
     useEffect(() => {
-        if (!loopEnabled || RenderTarget.current() === RenderTarget.canvas || isLoading) return
+        if (
+            !loopEnabled ||
+            RenderTarget.current() === RenderTarget.canvas ||
+            isLoading
+        )
+            return
 
         if (isHovering && hoverEnabled && !isMobile) {
             if (animationControlsRef.current) {
@@ -968,7 +965,13 @@ const Html = ({
 
     // Handle mouse movement to control the scanning effect
     const handleMouseMove = (e: React.MouseEvent) => {
-        if (!containerRef.current || !hoverEnabled || isMobile || RenderTarget.current() === RenderTarget.canvas) return
+        if (
+            !containerRef.current ||
+            !hoverEnabled ||
+            isMobile ||
+            RenderTarget.current() === RenderTarget.canvas
+        )
+            return
 
         // Get the bounding rectangle of the container
         const rect = containerRef.current.getBoundingClientRect()
@@ -1056,7 +1059,12 @@ const Html = ({
 
     // Handle mouse entering the container
     const handleMouseEnter = () => {
-        if (!hoverEnabled || isMobile || RenderTarget.current() === RenderTarget.canvas) return
+        if (
+            !hoverEnabled ||
+            isMobile ||
+            RenderTarget.current() === RenderTarget.canvas
+        )
+            return
         setIsHovering(true)
 
         // If loop is active, start transition from current progress to hover
@@ -1073,12 +1081,17 @@ const Html = ({
 
     // Handle mouse leaving the container
     const handleMouseLeave = async () => {
-        if (!hoverEnabled || isMobile || RenderTarget.current() === RenderTarget.canvas) return
-        
+        if (
+            !hoverEnabled ||
+            isMobile ||
+            RenderTarget.current() === RenderTarget.canvas
+        )
+            return
+
         // Capture the current progress before changing state
         const currentProgress = progress
         console.log("Mouse leave - current progress:", currentProgress)
-        
+
         setIsHovering(false)
         setIsTransitioning(false)
 
@@ -1092,7 +1105,6 @@ const Html = ({
 
     return (
         <div style={{ height: "100%", width: "100%" }}>
-
             <div
                 style={{ height: "100%" }}
                 ref={containerRef}
@@ -1139,49 +1151,70 @@ const Html = ({
     )
 }
 
-export default function Home(props: { 
-    textureMap?: any; 
-    depthMap?: any; 
-    dotColor?: string; 
-    effectType?: "dots" | "gradient";
-    intensity?: number;
-    showTexture?: boolean;
-    backgroundColor?: string;
+/**
+ *
+ * @framerIntrinsicWidth 600
+ * @framerIntrinsicHeight 300
+ *
+ * @framerDisableUnlink
+ *
+ * @framerSupportedLayoutWidth fixed
+ * @framerSupportedLayoutHeight fixed
+ */
+
+export default function Home(props: {
+    textureMap?: any
+    depthMap?: any
+    dotColor?: string
+    effectType?: "dots" | "gradient"
+    intensity?: number
+    showTexture?: boolean
+    backgroundColor?: string
     gradient?: {
-        width?: number;
-        bloomStrength?: number;
-        bloomRadius?: number;
-    };
+        width?: number
+        bloomStrength?: number
+        bloomRadius?: number
+    }
     dots?: {
-        size?: number;
-        tiling?: number;
-        bloomStrength?: number;
-        bloomRadius?: number;
-    };
+        size?: number
+        tiling?: number
+        bloomStrength?: number
+        bloomRadius?: number
+    }
     loop?: {
-        enabled?: boolean;
-        type?: "oneShot" | "repeat" | "mirror";
-        transition?: any; // Full Framer Motion transition object
-    };
+        enabled?: boolean
+        type?: "oneShot" | "repeat" | "mirror"
+        transition?: any // Full Framer Motion transition object
+    }
     hover?: {
-        enabled?: boolean;
-        direction?: "topToBottom" | "bottomToTop" | "leftToRight" | "rightToLeft" | "centerOutward" | "outwardToCenter";
-    };
+        enabled?: boolean
+        direction?:
+            | "topToBottom"
+            | "bottomToTop"
+            | "leftToRight"
+            | "rightToLeft"
+            | "centerOutward"
+            | "outwardToCenter"
+    }
 }) {
     // Check if both images are missing
-    const hasTextureMap = props.textureMap && (props.textureMap.src || typeof props.textureMap === 'string')
-    const hasDepthMap = props.depthMap && (props.depthMap.src || typeof props.depthMap === 'string')
-    
+    const hasTextureMap =
+        props.textureMap &&
+        (props.textureMap.src || typeof props.textureMap === "string")
+    const hasDepthMap =
+        props.depthMap &&
+        (props.depthMap.src || typeof props.depthMap === "string")
+
     // Show ComponentMessage if both images are missing
     if (!hasTextureMap && !hasDepthMap) {
         return (
-            <ComponentMessage 
+            <ComponentMessage
                 title="3D Scan Effect"
                 description="Add an Image and Depth map to create stunning 3D scanning effects"
             />
         )
     }
-    
+
     return (
         <ContextProvider>
             <Html
@@ -1200,3 +1233,5 @@ export default function Home(props: {
         </ContextProvider>
     )
 }
+
+Home.displayName = "Image Scan"

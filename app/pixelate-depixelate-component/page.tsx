@@ -18,7 +18,16 @@ function PixelateSvgFilter({
     crossLayers = false,
 }: PixelateSvgFilterProps) {
     return (
-        <svg style={{ userSelect: "none" }}>
+        <svg 
+            style={{ 
+                userSelect: "none",
+                position: "absolute",
+                width: 0,
+                height: 0,
+                overflow: "hidden",
+                pointerEvents: "none"
+            }}
+        >
             <defs>
                 <filter id={id} x="-50%" y="-50%" width="200%" height="200%">
                     {"First layer: Normal pixelation effect"}
@@ -146,15 +155,16 @@ const useIsMobile = () => {
     useEffect(() => {
         const checkIsMobile = () => {
             // Check for touch capability and screen size
-            const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+            const hasTouch =
+                "ontouchstart" in window || navigator.maxTouchPoints > 0
             const isSmallScreen = window.innerWidth <= 810
             setIsMobile(hasTouch || isSmallScreen)
         }
 
         checkIsMobile()
-        window.addEventListener('resize', checkIsMobile)
-        
-        return () => window.removeEventListener('resize', checkIsMobile)
+        window.addEventListener("resize", checkIsMobile)
+
+        return () => window.removeEventListener("resize", checkIsMobile)
     }, [])
 
     return isMobile
@@ -162,7 +172,7 @@ const useIsMobile = () => {
 
 /**
  * @framerDisableUnlink
- * @framerSupportedLayoutWidth any-prefer-fixed
+ * @framerSupportedLayoutWidth fixed
  * @framerSupportedLayoutHeight any-prefer-fixed
  * @framerIntrinsicWidth 400
  * @framerIntrinsicHeight 300
@@ -180,7 +190,6 @@ export default function PixelateComponent(props: any) {
     } = props
 
     const containerRef = useRef<HTMLDivElement>(null)
-    const [containerSize, setContainerSize] = useState({ width: 0, height: 0 })
     const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
     const [isHovering, setIsHovering] = useState(false)
 
@@ -193,16 +202,16 @@ export default function PixelateComponent(props: any) {
         : image && (image.src || image)
 
     // Show ComponentMessage if no media is provided
-    if (!hasMedia) {
-        return (
-            <div style={{ width: "100%", height: "100%" }}>
-                <ComponentMessage
-                    title="Pixelate Component"
-                    subtitle={`Set up the component by adding ${useVideo ? "video" : "image"} to the component properties.`}
-                />
-            </div>
-        )
-    }
+    // if (!hasMedia) {
+    //     return (
+    //         <div style={{ width: "100%", height: "100%" }}>
+    //             <ComponentMessage
+    //                 title="Pixelate Component"
+    //                 subtitle={`Set up the component by adding ${useVideo ? "video" : "image"} to the component properties.`}
+    //             />
+    //         </div>
+    //     )
+    // }
 
     // Calculate pixelation range based on strength
     const getPixelationRange = () => {
@@ -358,46 +367,44 @@ export default function PixelateComponent(props: any) {
         getInitialPixelation,
     ])
 
-    // Measure container size
-    useEffect(() => {
-        const updateSize = () => {
-            if (containerRef.current) {
-                const rect = containerRef.current.getBoundingClientRect()
-                setContainerSize({ width: rect.width, height: rect.height })
-            }
-        }
 
-        updateSize()
-        window.addEventListener("resize", updateSize)
-
-        return () => window.removeEventListener("resize", updateSize)
-    }, [])
 
     return (
-        <motion.div
-            ref={containerRef}
+        <div
             style={{
+                width: "400px",
+                height: "300px",
+                minWidth: "400px",
+                minHeight: "300px",
                 ...style,
-                position: "relative",
-                width: "100%",
-                height: "100%",
-                overflow: "hidden",
-                userSelect: "none",
-                userDrag: "none",
-                //border: "1px solid red",
             }}
-            onMouseMove={handleMouseMove}
-            onMouseEnter={handleMouseEnter}
-            onMouseLeave={handleMouseLeave}
         >
-            {/* SVG Filter - only render on non-mobile when pixelation > 1 */}
-            {!isMobile && smoothedPixelation.get() > 1 && (
+            <motion.div
+                ref={containerRef}
+                style={{
+                    position: "relative",
+                    width: "100%",
+                    height: "100%",
+                    overflow: "hidden",
+                    userSelect: "none",
+                    display: "block",
+                    boxSizing: "border-box",
+                    //border: "1px solid red",
+                }}
+                onMouseMove={handleMouseMove}
+                onMouseEnter={handleMouseEnter}
+                onMouseLeave={handleMouseLeave}
+            >
+            {/* SVG Filter - only render on non-mobile and non-canvas when pixelation > 1 */}
+            {!isMobile && !isCanvas && smoothedPixelation.get() > 1 && (
                 <PixelateSvgFilter
                     id="pixelate-filter"
                     size={smoothedPixelation.get()}
                     crossLayers={false}
                 />
             )}
+
+                           
 
             {/* Base unfiltered media */}
             {useVideo ? (
@@ -415,7 +422,6 @@ export default function PixelateComponent(props: any) {
                         objectFit: "cover",
                         backgroundPosition: "center center",
                         zIndex: 1,
-                        
                         userSelect: "none",
                     }}
                 />
@@ -431,7 +437,6 @@ export default function PixelateComponent(props: any) {
                         objectFit: "cover",
                         backgroundPosition: "center center",
                         zIndex: 1,
-                       
                         userSelect: "none",
                     }}
                 />
@@ -496,7 +501,8 @@ export default function PixelateComponent(props: any) {
                     }}
                 />
             ) : null}
-        </motion.div>
+            </motion.div>
+        </div>
     )
 }
 
@@ -571,4 +577,4 @@ addPropertyControls(PixelateComponent, {
     },
 })
 
-PixelateComponent.displayName = "Pixelate-Depixelate_Dev"
+PixelateComponent.displayName = "Pixelate Component"

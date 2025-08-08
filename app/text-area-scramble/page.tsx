@@ -1,6 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from "react";
+
+// LIBRARIES WE NEED TO BUNDLE:
+
 import { gsap } from "gsap";
 import { useGSAP } from "@gsap/react";
 import { SplitText } from "gsap/SplitText";
@@ -15,6 +18,7 @@ interface ScrambleTextProps {
   speed?: number;
   scrambleChars?: string;
   scrambleInterval?: number;
+  scramblePercentage?: number; // Percentage of characters to scramble (0-100)
   className?: string;
   style?: React.CSSProperties;
   color?: string;
@@ -31,6 +35,7 @@ const ScrambledText = ({
   speed = 0.5,
   scrambleChars = ".:",
   scrambleInterval = 500,
+  scramblePercentage = 100, // Default to 100% (all characters)
   className = "",
   style = {},
   color = "#000000",
@@ -45,6 +50,7 @@ const ScrambledText = ({
   const currentMousePosRef = useRef({ x: 0, y: 0 });
   const scrambleIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const currentScrambledStates = useRef<Map<Element, string>>(new Map());
+  const scrambledCharsRef = useRef<Set<Element>>(new Set()); // Track which chars are actually being scrambled
   const animationFrameRef = useRef<number | null>(null);
 
   useGSAP(() => {
@@ -94,12 +100,27 @@ const ScrambledText = ({
     const updateScrambledStates = () => {
       if (!isMouseNearAnyChar()) return; // Only scramble when mouse is near any character
 
-      charsRef.current.forEach((char: Element) => {
+      // Get all non-space characters that can be scrambled
+      const scrambleableChars = charsRef.current.filter((char: Element) => {
         const originalChar = char.getAttribute('data-content') || "";
-        if (originalChar.trim() !== "") { // Don't scramble spaces
-          const scrambledChar = getRandomChar();
-          currentScrambledStates.current.set(char, scrambledChar);
-        }
+        return originalChar.trim() !== ""; // Don't scramble spaces
+      });
+
+      // Calculate how many characters to scramble based on percentage
+      const charsToScramble = Math.floor((scrambleableChars.length * scramblePercentage) / 100);
+      
+      // Randomly select characters to scramble
+      const shuffledChars = [...scrambleableChars].sort(() => Math.random() - 0.5);
+      const charsToUpdate = shuffledChars.slice(0, charsToScramble);
+
+      // Clear previous scrambled characters tracking
+      scrambledCharsRef.current.clear();
+
+      // Update only the selected characters
+      charsToUpdate.forEach((char: Element) => {
+        const scrambledChar = getRandomChar();
+        currentScrambledStates.current.set(char, scrambledChar);
+        scrambledCharsRef.current.add(char); // Track this character as being scrambled
       });
       
       // Update the display if needed (only for characters currently being scrambled)
@@ -121,12 +142,24 @@ const ScrambledText = ({
         const dist = Math.hypot(dx, dy);
 
         if (dist < radius && isNearAnyChar) {
-          // Show the scrambled state and set scramble color
-          const scrambledChar = currentScrambledStates.current.get(char) || char.innerHTML;
-          gsap.set(char, { 
-            innerHTML: scrambledChar,
-            color: scrambleColor 
-          });
+          // Check if this character is actually being scrambled
+          const isBeingScrambled = scrambledCharsRef.current.has(char);
+          
+          if (isBeingScrambled) {
+            // Show the scrambled state and set scramble color
+            const scrambledChar = currentScrambledStates.current.get(char) || char.innerHTML;
+            gsap.set(char, { 
+              innerHTML: scrambledChar,
+              color: scrambleColor 
+            });
+          } else {
+            // Show the original character but keep normal color
+            const originalChar = char.getAttribute('data-content') || "";
+            gsap.set(char, { 
+              innerHTML: originalChar,
+              color: color 
+            });
+          }
         } else {
           // Show the original character and restore normal color
           const originalChar = char.getAttribute('data-content') || "";
@@ -225,12 +258,13 @@ const ScrambleDemo = () => {
       alignItems: 'center',
       gap: '8rem'
     }}>
-      {/* Large heading demo */}
+      {/* Large heading demo - 100% scramble */}
       <ScrambledText
         text="Hover over this text to see the scramble effect"
         radius={120}
         scrambleChars="!@#$%^&*()_+-={}[]|;:,.<>?"
         scrambleInterval={300}
+        scramblePercentage={100}
         color="#ffffff"
         scrambleColor="#ff6b6b"
         font={{
@@ -243,12 +277,13 @@ const ScrambleDemo = () => {
         }}
       />
       
-      {/* Subtitle */}
+      {/* Subtitle - 30% scramble for subtle effect */}
       <ScrambledText
-        text="Move your cursor around different parts of this text to see how the characters react within the radius area. The scrambling happens continuously while you hover."
+        text="Move your cursor around different parts of this text to see how the characters react within the radius area. Only 30% of characters scramble for a subtle effect."
         radius={80}
         scrambleChars=".:"
         scrambleInterval={500}
+        scramblePercentage={30}
         color="#888888"
         scrambleColor="#8855ff"
         font={{
@@ -260,12 +295,13 @@ const ScrambleDemo = () => {
         }}
       />
 
-      {/* Code-style demo */}
+      {/* Code-style demo - 60% scramble */}
       <ScrambledText
         text="const scrambleEffect = useGSAP(() => { /* Interactive magic happens here */ });"
         radius={100}
         scrambleChars={DEFAULT_SCRAMBLE_CHARS}
-        scrambleInterval={200}
+        scrambleInterval={500}
+        scramblePercentage={90}
         color="#f5f5f5"
         scrambleColor="#A36EFF"
         font={{
@@ -278,6 +314,8 @@ const ScrambleDemo = () => {
           border: '1px solid #333'
         }}
       />
+
+      
     </div>
   );
 };

@@ -113,20 +113,7 @@ addPropertyControls(Home, {
         optionTitles: ["Gradient", "Dots"],
         defaultValue: "gradient",
         displaySegmentedControl: true,
-        segmentedControlDirection: "horizontal",
-    },
-    dotColor: {
-        type: ControlType.Color,
-        title: "Color",
-        defaultValue: "#ffffff",
-    },
-    intensity: {
-        type: ControlType.Number,
-        title: "Intensity",
-        min: 0.1,
-        max: 5.0,
-        step: 0.1,
-        defaultValue: 1.5,
+        segmentedControlDirection: "vertical",
     },
 
     gradient: {
@@ -140,7 +127,7 @@ addPropertyControls(Home, {
                 min: 0.0,
                 max: 5.0,
                 step: 0.1,
-                defaultValue: 1.6,
+                defaultValue: 3,
             },
             bloomStrength: {
                 type: ControlType.Number,
@@ -148,15 +135,15 @@ addPropertyControls(Home, {
                 min: 0.0,
                 max: 1.0,
                 step: 0.01,
-                defaultValue: 0.49,
+                defaultValue: 0.5,
             },
             bloomRadius: {
                 type: ControlType.Number,
                 title: "Radius",
-                min: 0.0001,
-                max: 0.01,
-                step: 0.0001,
-                defaultValue: 0.0053,
+                min: 0.1,
+                max: 10,
+                step: 0.1,
+                defaultValue: 2,
             },
         },
     },
@@ -169,18 +156,18 @@ addPropertyControls(Home, {
             size: {
                 type: ControlType.Number,
                 title: "Size",
-                min: 0.01,
-                max: 2.0,
-                step: 0.01,
-                defaultValue: 0.1,
+                min: 1,
+                max: 100,
+                step: 1,
+                defaultValue: 5,
             },
             tiling: {
                 type: ControlType.Number,
-                title: "Tiling",
-                min: 20,
-                max: 200,
-                step: 10,
-                defaultValue: 50,
+                title: "Amount",
+                min: 1,
+                max: 100,
+                step: 1,
+                defaultValue: 18,
             },
             bloomStrength: {
                 type: ControlType.Number,
@@ -193,30 +180,49 @@ addPropertyControls(Home, {
             bloomRadius: {
                 type: ControlType.Number,
                 title: "Radius",
-                min: 0.0001,
-                max: 0.01,
-                step: 0.0001,
-                defaultValue: 0.001,
+                min: 0.1,
+                max: 10,
+                step: 0.1,
+                defaultValue: 1,
             },
         },
     },
 
-    loop: {
+    dotColor: {
+        type: ControlType.Color,
+        title: "Color",
+        defaultValue: "#ffffff",
+    },
+    
+    intensity: {
+        type: ControlType.Number,
+        title: "Intensity",
+        min: 0.1,
+        max: 5.0,
+        step: 0.1,
+        defaultValue: 1,
+    },
+
+    animation: {
         type: ControlType.Object,
-        title: "Loop",
+        title: "Animation",
         controls: {
-            enabled: {
-                type: ControlType.Boolean,
-                title: "Enable",
-                defaultValue: false,
-            },
-            type: {
+            play: {
                 type: ControlType.Enum,
-                title: "Type",
-                options: ["repeat", "mirror", "oneShot"],
-                optionTitles: ["Repeat", "Mirror", "One Shot"],
+                title: "Play",
+                options: ["once", "loop"],
+                optionTitles: ["Once", "Loop"],
+                defaultValue: "once",
+                displaySegmentedControl: true,
+                segmentedControlDirection: "vertical",
+            },
+            mode: {
+                type: ControlType.Enum,
+                title: "Mode",
+                options: ["repeat", "mirror"],
+                optionTitles: ["Repeat", "Mirror"],
                 defaultValue: "repeat",
-                hidden: (props) => !props.enabled,
+                hidden: (props) => props.play !== "loop",
             },
             transition: {
                 type: ControlType.Transition,
@@ -226,7 +232,6 @@ addPropertyControls(Home, {
                     duration: 3,
                     ease: "easeInOut",
                 },
-                hidden: (props) => !props.enabled,
             },
         },
     },
@@ -689,18 +694,22 @@ const Scene = ({
                 
                 // Create dots with proper size control
                 float dist = length(tiledUv);
-                float dotRadius = 0.5 - (uDotSize * 0.4); // uDotSize controls actual dot size
-                float dot = smoothstep(dotRadius, dotRadius - 0.01, dist);
+                // Map uDotSize (approx 0.01..2.0) to a radius within the cell (0.08..0.48)
+                float dotSize01 = clamp(uDotSize / 2.0, 0.0, 1.0);
+                float dotRadius = mix(0.08, 0.48, dotSize01);
+                float feather = 0.02;
+                // Filled circle mask with soft edge
+                float circle = 1.0 - smoothstep(dotRadius, dotRadius + feather, dist);
                 
                 // Base dot effect (no multiplication by uDotSize)
-                float dotEffect = dot * flow;
+                float dotEffect = circle * flow;
                 
                 // Apply bloom effect to dots
                 float bloomSize = uBloomRadius * 100.0;
                 float dotBloom = 0.0;
                 
                 // Core bloom for dots - use the same dot radius
-                float coreBloom = dot * flow * uBloomStrength;
+                float coreBloom = circle * flow * uBloomStrength;
                 // Medium bloom - extends from dot edge
                 float mediumBloom = smoothstep(dotRadius + bloomSize * 0.3, dotRadius, dist) * flow * uBloomStrength * 0.6;
                 // Outer bloom - largest area
@@ -790,7 +799,7 @@ const Html = ({
     backgroundColor: propBackgroundColor,
     gradient: propGradient,
     dots: propDots,
-    loop: propLoop,
+    animation: propAnimation,
     hover: propHover,
 }: {
     textureMap?: any
@@ -812,10 +821,10 @@ const Html = ({
         bloomStrength?: number
         bloomRadius?: number
     }
-    loop?: {
-        enabled?: boolean
-        type?: "oneShot" | "repeat" | "mirror"
-        transition?: any // Full Framer Motion transition object
+    animation?: {
+        play?: "once" | "loop"
+        mode?: "repeat" | "mirror"
+        transition?: any
     }
     hover?: {
         enabled?: boolean
@@ -846,18 +855,19 @@ const Html = ({
     const resolvedBackgroundColor = resolveTokenColor(rawBackgroundColor)
 
     // Extract nested object props with defaults
-    const dotSize = propDots?.size ?? 0.1
-    const tilingScale = propDots?.tiling ?? 50
-    const dotsBloomStrength = propDots?.bloomStrength ?? 0.15
-    const dotsBloomRadius = propDots?.bloomRadius ?? 0.001
+    // Normalize user-facing controls to internal ranges
+    const dotSize = ((propDots?.size ?? 5) as number) / 50 // 1..100 -> 0.02..2.0 (used in shader mapping)
+    const tilingScale = Math.max(1, Math.min(100, (propDots?.tiling ?? 18) as number)) * 2 // 1..100 -> 2..200
+    const dotsBloomStrength = propDots?.bloomStrength ?? 0.15 // already 0..1 good
+    const dotsBloomRadius = ((propDots?.bloomRadius ?? 1) as number) / 1000 // reduce impact by 50 vs previous mapping
 
     const gradientWidth = propGradient?.width ?? 0.5
     const gradientBloomStrength = propGradient?.bloomStrength ?? 0.15
-    const gradientBloomRadius = propGradient?.bloomRadius ?? 0.001
+    const gradientBloomRadius = ((propGradient?.bloomRadius ?? 5.3) as number) / 1000 // reduce impact by 50 vs previous mapping
 
-    const loopEnabled = propLoop?.enabled ?? false
-    const loopType = propLoop?.type ?? "repeat"
-    const loopTransition = propLoop?.transition ?? {
+    const playMode = propAnimation?.play ?? "once"
+    const loopType = propAnimation?.mode ?? "repeat"
+    const loopTransition = propAnimation?.transition ?? {
         type: "tween",
         duration: 3,
         ease: "easeInOut",
@@ -886,7 +896,7 @@ const Html = ({
     const containerRef = useRef<HTMLDivElement>(null)
     const animationControlsRef = useRef<any>(null)
 
-    // Loop animation function - defined outside useEffect so it can be called from hover handlers
+    // Animation function - plays once or loops
     const startLoop = (startFrom = 0, forceProgressUpdate = false) => {
         console.log(
             "startLoop called with startFrom:",
@@ -895,11 +905,7 @@ const Html = ({
             forceProgressUpdate
         )
 
-        if (
-            !loopEnabled ||
-            RenderTarget.current() === RenderTarget.canvas ||
-            isLoading
-        ) {
+        if (RenderTarget.current() === RenderTarget.canvas || isLoading) {
             if (animationControlsRef.current) {
                 animationControlsRef.current.stop()
                 animationControlsRef.current = null
@@ -917,7 +923,7 @@ const Html = ({
             animationControlsRef.current.stop()
         }
 
-        if (loopType === "oneShot") {
+        if ((propAnimation?.play ?? "once") === "once") {
             animationControlsRef.current = animate(startFrom, 1, {
                 ...loopTransition,
                 onUpdate: (latest) => {
@@ -931,7 +937,7 @@ const Html = ({
                     }
                 },
             })
-        } else if (loopType === "repeat") {
+        } else if ((propAnimation?.play ?? "once") === "loop" && loopType === "repeat") {
             const animateForward = (currentValue = startFrom) => {
                 animationControlsRef.current = animate(currentValue, 1, {
                     ...loopTransition,
@@ -946,14 +952,14 @@ const Html = ({
                         }
                     },
                     onComplete: () => {
-                        if (loopEnabled && loopType === "repeat") {
+                        if ((propAnimation?.play ?? "once") === "loop" && loopType === "repeat") {
                             animateForward(0) // Restart from 0 for next cycle
                         }
                     },
                 })
             }
             animateForward()
-        } else if (loopType === "mirror") {
+        } else if ((propAnimation?.play ?? "once") === "loop" && loopType === "mirror") {
             let direction = startFrom < 0.5 ? 1 : -1 // Determine direction based on start position
             let currentValue = startFrom
 
@@ -973,7 +979,7 @@ const Html = ({
                         }
                     },
                     onComplete: () => {
-                        if (loopEnabled && loopType === "mirror") {
+                        if ((propAnimation?.play ?? "once") === "loop" && loopType === "mirror") {
                             direction *= -1 // Reverse direction
                             animateMirror() // Continue mirror animation
                         }
@@ -984,12 +990,9 @@ const Html = ({
         }
     }
 
-    // Loop animation with Framer Motion animate function
+    // Auto-start animation
     useEffect(() => {
-        // Only auto-start loop if we're not hovering (prevents flash when mouse leaves)
-        if (!isHovering) {
-            startLoop(0, false)
-        }
+        if (!isHovering) startLoop(0, false)
 
         return () => {
             if (animationControlsRef.current) {
@@ -997,15 +1000,11 @@ const Html = ({
                 animationControlsRef.current = null
             }
         }
-    }, [loopEnabled, loopType, loopTransition, isTransitioning, isLoading]) // Removed isHovering from dependencies
+    }, [propAnimation?.play, loopType, loopTransition, isLoading])
 
     // Handle hover state changes for loop animation control
     useEffect(() => {
-        if (
-            !loopEnabled ||
-            RenderTarget.current() === RenderTarget.canvas ||
-            isLoading
-        )
+        if (RenderTarget.current() === RenderTarget.canvas || isLoading)
             return
 
         if (isHovering && hoverEnabled && !isMobile) {
@@ -1013,7 +1012,7 @@ const Html = ({
                 animationControlsRef.current.stop()
             }
         }
-    }, [isHovering, hoverEnabled, loopEnabled, isMobile, isLoading])
+    }, [isHovering, hoverEnabled, propAnimation?.play, isMobile, isLoading])
 
     // Handle mouse movement to control the scanning effect
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -1119,8 +1118,8 @@ const Html = ({
             return
         setIsHovering(true)
 
-        // If loop is active, start transition from current progress to hover
-        if (loopEnabled) {
+        // When hovering, transition from current progress to cursor control
+        if (true) {
             setIsTransitioning(true)
             setTransitionStartProgress(progress)
             setTransitionStartTime(Date.now())
@@ -1147,7 +1146,7 @@ const Html = ({
         setIsHovering(false)
         setIsTransitioning(false)
 
-        if (loopEnabled) {
+        if ((propAnimation?.play ?? "once") === "loop") {
             // Start the loop immediately from the current progress position
             startLoop(currentProgress, true)
         }
@@ -1158,7 +1157,7 @@ const Html = ({
     return (
         <div style={{ height: "100%", width: "100%", display: "flex", justifyContent: "center", alignItems: "center" }}>
             <div
-                style={{ height: "100%" }}
+                style={{ height: "100%", width: "100%" }}
                 ref={containerRef}
                 onMouseMove={handleMouseMove}
                 onMouseEnter={handleMouseEnter}
@@ -1234,9 +1233,9 @@ export default function Home(props: {
         bloomStrength?: number
         bloomRadius?: number
     }
-    loop?: {
-        enabled?: boolean
-        type?: "oneShot" | "repeat" | "mirror"
+    animation?: {
+        play?: "once" | "loop"
+        mode?: "repeat" | "mirror"
         transition?: any // Full Framer Motion transition object
     }
     hover?: {
@@ -1281,7 +1280,7 @@ export default function Home(props: {
                 backgroundColor={props.backgroundColor}
                 gradient={props.gradient}
                 dots={props.dots}
-                loop={props.loop}
+                animation={props.animation}
                 hover={props.hover}
             ></Html>
         </ContextProvider>

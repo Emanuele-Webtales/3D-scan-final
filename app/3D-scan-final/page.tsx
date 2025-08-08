@@ -684,9 +684,15 @@ const Scene = ({
               // Use the exact working formula from reference-code.tsx
               // Shift the band backward by one full gradient width so that
               // pixels at exact progress start invisible and end not stuck at 1.0
-              float bandWidth = uGradientWidth * 0.1;
-              // Stretch progress so the band starts earlier and ends later based on width
-              float stretchedProgress = uProgress * (1.0 + 2.0 * bandWidth) - bandWidth;
+              // Base band width from control
+              float baseWidth = uGradientWidth * 0.1;
+              // Account for perceived widening from intensity and bloom
+              float intensityFactor = max(uIntensity - 1.0, 0.0) * 0.15; // 0 when <=1, grows slowly
+              float bloomFactor = uBloomStrength * (1.0 + uBloomRadius * 50.0); // radius expands halo
+              float bandWidth = baseWidth * (1.0 + intensityFactor + bloomFactor);
+              // Stretch progress farther (pre/overshoot) while keeping the local falloff shaped by bandWidth
+              float overshootWidth = bandWidth * 2.2; // push more than the visual width
+              float stretchedProgress = uProgress * (1.0 + 2.0 * overshootWidth) - overshootWidth;
               float flow = 1.0 - smoothstep(0.0, bandWidth, abs(depth - stretchedProgress));
               
               // For dots effect - only render if explicitly in dots mode
@@ -707,8 +713,12 @@ const Scene = ({
                 float circle = 1.0 - smoothstep(dotRadius, dotRadius + feather, dist);
                 
                 // Shifted flow like gradient so initial band starts at 0 and overshoots
-                float bandWidth = uGradientWidth * 0.1;
-                float stretchedProgress = uProgress * (1.0 + 2.0 * bandWidth) - bandWidth;
+                float baseWidth = uGradientWidth * 0.1;
+                float intensityFactor = max(uIntensity - 1.0, 0.0) * 0.15;
+                float bloomFactor = uBloomStrength * (1.0 + uBloomRadius * 50.0);
+                float bandWidth = baseWidth * (1.0 + intensityFactor + bloomFactor);
+                float overshootWidth = bandWidth * 2.0;
+                float stretchedProgress = uProgress * (1.0 + 2.0 * overshootWidth) - overshootWidth;
                 float dotFlow = 1.0 - smoothstep(0.0, bandWidth, abs(depth - stretchedProgress));
                 
                 // Base dot effect
@@ -875,9 +885,13 @@ const Html = ({
     const [isVisible, setIsVisible] = useState(true)
 
     // Mouse and progress state
-    const [progress, setProgress] = useState(0)
+    const [progress, setProgress] = useState(
+        RenderTarget.current() === RenderTarget.canvas ? 0.5 : 0
+    )
     const [isHovering, setIsHovering] = useState(false)
-    const [loopProgress, setLoopProgress] = useState(0)
+    const [loopProgress, setLoopProgress] = useState(
+        RenderTarget.current() === RenderTarget.canvas ? 0.5 : 0
+    )
     const [isTransitioning, setIsTransitioning] = useState(false)
     const [transitionStartProgress, setTransitionStartProgress] = useState(0)
     const [transitionStartTime, setTransitionStartTime] = useState(0)
@@ -901,8 +915,8 @@ const Html = ({
             }
             // Keep progress at zero in canvas mode
             if (RenderTarget.current() === RenderTarget.canvas) {
-                setProgress(0)
-                setLoopProgress(0)
+                setProgress(0.5)
+                setLoopProgress(0.5)
             }
             return
         }
@@ -979,9 +993,11 @@ const Html = ({
         }
     }
 
-    // Auto-start animation
+    // Auto-start animation (skip in canvas to keep static mid-state)
     useEffect(() => {
-        if (!isHovering) startLoop(0, false)
+        if (RenderTarget.current() !== RenderTarget.canvas && !isHovering) {
+            startLoop(0, false)
+        }
 
         return () => {
             if (animationControlsRef.current) {
@@ -991,7 +1007,7 @@ const Html = ({
         }
     }, [propAnimation?.play, loopType, loopTransition, isLoading])
 
-    // Handle hover state changes for loop animation control
+    // Handle hover state changes
     useEffect(() => {
         if (RenderTarget.current() === RenderTarget.canvas || isLoading)
             return

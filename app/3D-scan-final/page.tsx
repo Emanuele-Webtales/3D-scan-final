@@ -54,15 +54,28 @@ const useIsMobile = () => {
     return isMobile
 }
 
-// Hook to get image aspect ratio from texture
+// Hook to get image aspect ratio from a loaded Three.js texture (supports multiple sources)
 const useImageAspectRatio = (texture: any) => {
     const [aspectRatio, setAspectRatio] = useState(16 / 9) // Default aspect ratio
 
     useEffect(() => {
-        if (texture && texture.image) {
-            const img = texture.image
-            const ratio = img.width / img.height
-            setAspectRatio(ratio)
+        if (!texture) return
+
+        // three@r150+ may store data on texture.source.data
+        const source: any = (texture as any).image || (texture as any).source?.data
+        if (!source) return
+
+        const width =
+            (source as any).videoWidth ||
+            (source as any).naturalWidth ||
+            (source as any).width
+        const height =
+            (source as any).videoHeight ||
+            (source as any).naturalHeight ||
+            (source as any).height
+
+        if (width && height) {
+            setAspectRatio(width / height)
         }
     }, [texture])
 
@@ -71,24 +84,25 @@ const useImageAspectRatio = (texture: any) => {
 
 // Property Controls for Framer
 addPropertyControls(Home, {
-    textureMap: {
-        type: ControlType.ResponsiveImage,
-        title: "Image",
-    },
     depthMap: {
         type: ControlType.ResponsiveImage,
         title: "Depth",
     },
-    showTexture: {
+    backgroundMode: {
         type: ControlType.Boolean,
-        title: "Show Image",
-        defaultValue: false,
+        title: "Background",
+        defaultValue: false, // false = Color, true = Image
+    },
+    textureMap: {
+        type: ControlType.ResponsiveImage,
+        title: "Image",
+        hidden: (props) => !props.backgroundMode,
     },
     backgroundColor: {
         type: ControlType.Color,
-        title: "Background",
+        title: "Color",
         defaultValue: "#000000",
-        hidden: (props) => props.showTexture ?? false,
+        hidden: (props) => !!props.backgroundMode,
     },
     effectType: {
         type: ControlType.Enum,
@@ -382,8 +396,13 @@ const Scene = ({
         }
     )
 
-    // Get aspect ratio from the main texture
-    const imageAspectRatio = useImageAspectRatio(rawMap)
+    // Determine which provided asset should drive aspect ratio. If the user did not
+    // provide a texture map, ignore the placeholder texture and use the real depth map.
+    const hasTextureMapProp = !!(
+        textureMap && (textureMap.src || typeof textureMap === "string")
+    )
+    const aspectSourceTexture = hasTextureMapProp ? rawMap : depthMapTexture
+    const imageAspectRatio = useImageAspectRatio(aspectSourceTexture)
 
     // Memoized color conversion - only recalculates when dotColor changes
     const rgbColor = useMemo(() => {
@@ -739,7 +758,8 @@ const Html = ({
     dotColor,
     effectType: propEffectType,
     intensity: propIntensity,
-    showTexture: propShowTexture,
+    showTexture: deprecatedShowTexture,
+    backgroundMode: propBackgroundMode,
     backgroundColor: propBackgroundColor,
     gradient: propGradient,
     dots: propDots,
@@ -751,7 +771,8 @@ const Html = ({
     dotColor?: string
     effectType?: "dots" | "gradient"
     intensity?: number
-    showTexture?: boolean
+    showTexture?: boolean // deprecated: kept for backwards compatibility
+    backgroundMode?: boolean
     backgroundColor?: string
     gradient?: {
         width?: number
@@ -790,7 +811,8 @@ const Html = ({
     // Effect-related props with defaults
     const effectType = propEffectType ?? "gradient"
     const intensity = propIntensity ?? 1.0
-    const showTexture = propShowTexture ?? false
+    const backgroundMode = propBackgroundMode ?? !!deprecatedShowTexture // true = Image, false = Color
+    const showTexture = backgroundMode
     const backgroundColor = propBackgroundColor ?? "#000000"
 
     // Extract nested object props with defaults
@@ -1168,7 +1190,8 @@ export default function Home(props: {
     dotColor?: string
     effectType?: "dots" | "gradient"
     intensity?: number
-    showTexture?: boolean
+    showTexture?: boolean // deprecated: kept for backwards compatibility
+    backgroundMode?: boolean
     backgroundColor?: string
     gradient?: {
         width?: number
@@ -1224,6 +1247,7 @@ export default function Home(props: {
                 effectType={props.effectType}
                 intensity={props.intensity}
                 showTexture={props.showTexture}
+                backgroundMode={props.backgroundMode}
                 backgroundColor={props.backgroundColor}
                 gradient={props.gradient}
                 dots={props.dots}

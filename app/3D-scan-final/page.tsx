@@ -682,7 +682,12 @@ const Scene = ({
               float depth = texture2D(uDepthMap, uv).r;
               
               // Use the exact working formula from reference-code.tsx
-              float flow = 1.0 - smoothstep(0.0, 0.02, abs(depth - uProgress));
+              // Shift the band backward by one full gradient width so that
+              // pixels at exact progress start invisible and end not stuck at 1.0
+              float bandWidth = uGradientWidth * 0.1;
+              // Stretch progress so the band starts earlier and ends later based on width
+              float stretchedProgress = uProgress * (1.0 + 2.0 * bandWidth) - bandWidth;
+              float flow = 1.0 - smoothstep(0.0, bandWidth, abs(depth - stretchedProgress));
               
               // For dots effect - only render if explicitly in dots mode
               if (uEffectType < 0.5) {
@@ -701,8 +706,13 @@ const Scene = ({
                 // Filled circle mask with soft edge
                 float circle = 1.0 - smoothstep(dotRadius, dotRadius + feather, dist);
                 
-                // Base dot effect (no multiplication by uDotSize)
-                float dotEffect = circle * flow;
+                // Shifted flow like gradient so initial band starts at 0 and overshoots
+                float bandWidth = uGradientWidth * 0.1;
+                float stretchedProgress = uProgress * (1.0 + 2.0 * bandWidth) - bandWidth;
+                float dotFlow = 1.0 - smoothstep(0.0, bandWidth, abs(depth - stretchedProgress));
+                
+                // Base dot effect
+                float dotEffect = circle * dotFlow;
                 
                 // Apply bloom effect to dots
                 float bloomSize = uBloomRadius * 100.0;
@@ -721,31 +731,10 @@ const Scene = ({
                 float final = max(dotEffect, dotBloom) * uIntensity;
                 gl_FragColor = vec4(uColor * final, final);
               } else {
-                // For gradient line effect - high quality implementation from reference-code-old.tsx
-                float exactProgress = abs(depth - uProgress);
-                
-                // Scale the gradient width to be less sensitive (like reference code)
-                float scaledGradientWidth = uGradientWidth * 0.1;
-                
-                // Opacity pattern:
-                // - Current progress band (exactProgress = 0): opacity = 1.0
-                // - Bands within gradientWidth range: linear interpolation from 1.0 to 0.05
-                // - Bands outside gradientWidth range: opacity = 0.0
-                
-                // Check if we're at the current progress band (very precise)
-                bool isCurrentBand = exactProgress <= 0.001;
-                
-                // Check if we're within the gradient width range
-                bool isWithinGradientRange = exactProgress <= scaledGradientWidth;
-                
-                // Calculate linear interpolation for bands within range
-                // exactProgress goes from 0 to scaledGradientWidth
-                // We want opacity to go from 1.0 to 0.05
-                float normalizedDistance = exactProgress / scaledGradientWidth;
-                float interpolatedOpacity = (1.0 - normalizedDistance) * 0.95 + 0.05;
-                
-                // Set opacity: 1.0 for current band, interpolated for bands within range, 0.0 for others
-                float opacity = isCurrentBand ? 1.0 : (isWithinGradientRange ? interpolatedOpacity : 0.0);
+                // For gradient line effect - use same stretched band so edges start/end at 0
+                float exactProgress = abs(depth - stretchedProgress);
+                // Opacity fades from 1.0 at band center to 0.0 at one width away
+                float opacity = 1.0 - smoothstep(0.0, bandWidth, exactProgress);
                 
                 // Intensity-based bloom effect - brighter areas create more bloom like reference code
                 float bloomStrength = uBloomStrength;
@@ -755,16 +744,16 @@ const Scene = ({
                 float bloom = 0.0;
                 
                 // Core bloom - closest to the line
-                float coreBloom = exactProgress <= (scaledGradientWidth + bloomSize * 0.5) ? 
-                    (1.0 - smoothstep(0.0, scaledGradientWidth + bloomSize * 0.5, exactProgress)) * bloomStrength : 0.0;
+                float coreBloom = exactProgress <= (bandWidth + bloomSize * 0.5) ? 
+                    (1.0 - smoothstep(0.0, bandWidth + bloomSize * 0.5, exactProgress)) * bloomStrength : 0.0;
                 
                 // Medium bloom - extends further
-                float mediumBloom = exactProgress <= (scaledGradientWidth + bloomSize) ? 
-                    (1.0 - smoothstep(0.0, scaledGradientWidth + bloomSize, exactProgress)) * bloomStrength * 0.6 : 0.0;
+                float mediumBloom = exactProgress <= (bandWidth + bloomSize) ? 
+                    (1.0 - smoothstep(0.0, bandWidth + bloomSize, exactProgress)) * bloomStrength * 0.6 : 0.0;
                 
                 // Outer bloom - softest and widest
-                float outerBloom = exactProgress <= (scaledGradientWidth + bloomSize * 2.0) ? 
-                    (1.0 - smoothstep(0.0, scaledGradientWidth + bloomSize * 2.0, exactProgress)) * bloomStrength * 0.3 : 0.0;
+                float outerBloom = exactProgress <= (bandWidth + bloomSize * 2.0) ? 
+                    (1.0 - smoothstep(0.0, bandWidth + bloomSize * 2.0, exactProgress)) * bloomStrength * 0.3 : 0.0;
                 
                 // Combine all bloom layers
                 bloom = max(max(coreBloom, mediumBloom), outerBloom);

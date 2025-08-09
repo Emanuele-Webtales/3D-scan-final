@@ -62,7 +62,8 @@ const useImageAspectRatio = (texture: any) => {
         if (!texture) return
 
         // three@r150+ may store data on texture.source.data
-        const source: any = (texture as any).image || (texture as any).source?.data
+        const source: any =
+            (texture as any).image || (texture as any).source?.data
         if (!source) return
 
         const width =
@@ -87,6 +88,8 @@ addPropertyControls(Home, {
     depthMap: {
         type: ControlType.ResponsiveImage,
         title: "Depth",
+        description:
+            "Use [this free tool](https://app.artificialstudio.ai/tools/image-depth-map-generator).",
     },
     backgroundMode: {
         type: ControlType.Boolean,
@@ -102,7 +105,7 @@ addPropertyControls(Home, {
     },
     backgroundColor: {
         type: ControlType.Color,
-        title: "Color",
+        title: "BG Color",
         defaultValue: "#000000",
         hidden: (props) => !!props.backgroundMode,
     },
@@ -127,7 +130,7 @@ addPropertyControls(Home, {
                 min: 0.0,
                 max: 5.0,
                 step: 0.1,
-                defaultValue: 3,
+                defaultValue: 3.5,
             },
             bloomStrength: {
                 type: ControlType.Number,
@@ -135,7 +138,7 @@ addPropertyControls(Home, {
                 min: 0.0,
                 max: 1.0,
                 step: 0.01,
-                defaultValue: 0.5,
+                defaultValue: 0.3,
             },
             bloomRadius: {
                 type: ControlType.Number,
@@ -143,7 +146,7 @@ addPropertyControls(Home, {
                 min: 0.1,
                 max: 10,
                 step: 0.1,
-                defaultValue: 2,
+                defaultValue: 5,
             },
         },
     },
@@ -159,7 +162,7 @@ addPropertyControls(Home, {
                 min: 1,
                 max: 100,
                 step: 1,
-                defaultValue: 5,
+                defaultValue: 50,
             },
             tiling: {
                 type: ControlType.Number,
@@ -167,7 +170,7 @@ addPropertyControls(Home, {
                 min: 1,
                 max: 100,
                 step: 1,
-                defaultValue: 18,
+                defaultValue: 50,
             },
             bloomStrength: {
                 type: ControlType.Number,
@@ -175,7 +178,7 @@ addPropertyControls(Home, {
                 min: 0.0,
                 max: 1.0,
                 step: 0.01,
-                defaultValue: 0.15,
+                defaultValue: 0.5,
             },
             bloomRadius: {
                 type: ControlType.Number,
@@ -183,7 +186,7 @@ addPropertyControls(Home, {
                 min: 0.1,
                 max: 10,
                 step: 0.1,
-                defaultValue: 1,
+                defaultValue: 5,
             },
         },
     },
@@ -193,7 +196,7 @@ addPropertyControls(Home, {
         title: "Color",
         defaultValue: "#ffffff",
     },
-    
+
     intensity: {
         type: ControlType.Number,
         title: "Intensity",
@@ -222,6 +225,8 @@ addPropertyControls(Home, {
                 options: ["repeat", "mirror"],
                 optionTitles: ["Repeat", "Mirror"],
                 defaultValue: "repeat",
+                displaySegmentedControl: true,
+                segmentedControlDirection: "vertical",
                 hidden: (props) => props.play !== "loop",
             },
             transition: {
@@ -229,7 +234,7 @@ addPropertyControls(Home, {
                 title: "Timing",
                 defaultValue: {
                     type: "tween",
-                    duration: 3,
+                    duration: 2.5,
                     ease: "easeInOut",
                 },
             },
@@ -333,9 +338,13 @@ export const WebGPUCanvas = (props: any) => {
                 precision: "mediump",
                 depth: true,
             }}
+            // Absolutely fill the parent; avoids any layout-driven min-height behavior
             style={{
+                position: "absolute",
+                inset: 0,
                 width: "100%",
                 height: "100%",
+                display: "block",
             }}
             resize={{ offsetSize: true }}
             dpr={[1, 2]}
@@ -400,14 +409,17 @@ const Scene = ({
     depthMap,
 }: SceneProps & { textureMap?: any; depthMap?: any }) => {
     const { setIsLoading } = useContext(GlobalContext)
-    const { viewport } = useThree()
+    // Subscribe to viewport/size so we re-render on container resize
+    const viewport = useThree((state: any) => state.viewport)
+    const size = useThree((state: any) => state.size)
     const materialRef = useRef<Mesh>(null)
 
     // Log dotColor changes (not every frame!) - removed for performance
 
     // Determine whether a real texture image was provided
     const hasTextureMapProp = !!(
-        textureMap && (textureMap.src || typeof textureMap === "string")
+        textureMap &&
+        (textureMap.src || typeof textureMap === "string")
     )
 
     // Convert Framer image objects to URLs. Use a 1x1 transparent data URI as safe fallback.
@@ -694,6 +706,11 @@ const Scene = ({
               float overshootWidth = bandWidth * 2.2; // push more than the visual width
               float stretchedProgress = uProgress * (1.0 + 2.0 * overshootWidth) - overshootWidth;
               float flow = 1.0 - smoothstep(0.0, bandWidth, abs(depth - stretchedProgress));
+
+              // Global progress envelope: fade in first 5% and fade out last 5%
+              float startFade = smoothstep(0.0, 0.05, uProgress);
+              float endFade = 1.0 - smoothstep(0.95, 1.0, uProgress);
+              float progressEnvelope = startFade * endFade;
               
               // For dots effect - only render if explicitly in dots mode
               if (uEffectType < 0.5) {
@@ -739,6 +756,8 @@ const Scene = ({
                 
                 // Combine dot effect with bloom and apply intensity
                 float final = max(dotEffect, dotBloom) * uIntensity;
+                // Apply global progress envelope so effect is invisible at start and end
+                final *= progressEnvelope;
                 gl_FragColor = vec4(uColor * final, final);
               } else {
                 // For gradient line effect - use same stretched band so edges start/end at 0
@@ -774,6 +793,8 @@ const Scene = ({
                 
                 // Combine main line with bloom
                 float finalOpacity = max(opacity, bloom);
+                // Apply global progress envelope so effect is invisible at start and end
+                finalOpacity *= progressEnvelope;
                 
                 // Apply color and intensity
                 gl_FragColor = vec4(uColor * finalOpacity * uIntensity, finalOpacity);
@@ -856,13 +877,15 @@ const Html = ({
     // Extract nested object props with defaults
     // Normalize user-facing controls to internal ranges
     const dotSize = ((propDots?.size ?? 5) as number) / 50 // 1..100 -> 0.02..2.0 (used in shader mapping)
-    const tilingScale = Math.max(1, Math.min(100, (propDots?.tiling ?? 18) as number)) * 2 // 1..100 -> 2..200
+    const tilingScale =
+        Math.max(1, Math.min(100, (propDots?.tiling ?? 18) as number)) * 2 // 1..100 -> 2..200
     const dotsBloomStrength = propDots?.bloomStrength ?? 0.15 // already 0..1 good
     const dotsBloomRadius = ((propDots?.bloomRadius ?? 1) as number) / 1000 // reduce impact by 50 vs previous mapping
 
     const gradientWidth = propGradient?.width ?? 0.5
     const gradientBloomStrength = propGradient?.bloomStrength ?? 0.15
-    const gradientBloomRadius = ((propGradient?.bloomRadius ?? 5.3) as number) / 1000 // reduce impact by 50 vs previous mapping
+    const gradientBloomRadius =
+        ((propGradient?.bloomRadius ?? 5.3) as number) / 1000 // reduce impact by 50 vs previous mapping
 
     const playMode = propAnimation?.play ?? "once"
     const loopType = propAnimation?.mode ?? "repeat"
@@ -940,7 +963,10 @@ const Html = ({
                     }
                 },
             })
-        } else if ((propAnimation?.play ?? "once") === "loop" && loopType === "repeat") {
+        } else if (
+            (propAnimation?.play ?? "once") === "loop" &&
+            loopType === "repeat"
+        ) {
             const animateForward = (currentValue = startFrom) => {
                 animationControlsRef.current = animate(currentValue, 1, {
                     ...loopTransition,
@@ -955,14 +981,20 @@ const Html = ({
                         }
                     },
                     onComplete: () => {
-                        if ((propAnimation?.play ?? "once") === "loop" && loopType === "repeat") {
+                        if (
+                            (propAnimation?.play ?? "once") === "loop" &&
+                            loopType === "repeat"
+                        ) {
                             animateForward(0) // Restart from 0 for next cycle
                         }
                     },
                 })
             }
             animateForward()
-        } else if ((propAnimation?.play ?? "once") === "loop" && loopType === "mirror") {
+        } else if (
+            (propAnimation?.play ?? "once") === "loop" &&
+            loopType === "mirror"
+        ) {
             let direction = startFrom < 0.5 ? 1 : -1 // Determine direction based on start position
             let currentValue = startFrom
 
@@ -982,7 +1014,10 @@ const Html = ({
                         }
                     },
                     onComplete: () => {
-                        if ((propAnimation?.play ?? "once") === "loop" && loopType === "mirror") {
+                        if (
+                            (propAnimation?.play ?? "once") === "loop" &&
+                            loopType === "mirror"
+                        ) {
                             direction *= -1 // Reverse direction
                             animateMirror() // Continue mirror animation
                         }
@@ -1009,8 +1044,7 @@ const Html = ({
 
     // Handle hover state changes
     useEffect(() => {
-        if (RenderTarget.current() === RenderTarget.canvas || isLoading)
-            return
+        if (RenderTarget.current() === RenderTarget.canvas || isLoading) return
 
         if (isHovering && hoverEnabled && !isMobile) {
             if (animationControlsRef.current) {
@@ -1156,33 +1190,23 @@ const Html = ({
         startLoop(currentProgress, true)
     }
 
-    
-
     return (
-        <div style={{ height: "100%", width: "100%", display: "flex", justifyContent: "center", alignItems: "center" }}>
+        <div
+            style={{
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+            }}
+        >
             <div
-                style={{ height: "100%", width: "100%" }}
+                style={{ height: "100%", width: "100%", position: "relative" }}
                 ref={containerRef}
                 onMouseMove={handleMouseMove}
                 onMouseEnter={handleMouseEnter}
                 onMouseLeave={handleMouseLeave}
             >
-                <div
-                    style={{
-                        height: "100%",
-                        textTransform: "uppercase",
-                        alignItems: "center",
-                        width: "100%",
-                        position: "absolute",
-                        zIndex: 60,
-                        pointerEvents: "none",
-                        padding: "0 2.5rem",
-                        display: "flex",
-                        justifyContent: "center",
-                        flexDirection: "column",
-                    }}
-                ></div>
-
                 <WebGPUCanvas>
                     <PostProcessing></PostProcessing>
                     <Scene
@@ -1210,11 +1234,9 @@ const Html = ({
  *
  * @framerIntrinsicWidth 600
  * @framerIntrinsicHeight 300
- *
  * @framerDisableUnlink
- *
- * @framerSupportedLayoutWidth fixed
- * @framerSupportedLayoutHeight fixed
+ * @framerSupportedLayoutWidth any-prefer-fixed
+ * @framerSupportedLayoutHeight any-prefer-fixed
  */
 
 export default function Home(props: {
@@ -1264,15 +1286,18 @@ export default function Home(props: {
     // Show ComponentMessage if both images are missing
     if (!hasTextureMap && !hasDepthMap) {
         return (
-            <ComponentMessage
-                title="3D Scan Effect"
-                description="Add an Image and Depth map to create stunning 3D scanning effects"
-            />
+            <div style={{ height: "100%", width: "100%" }}>
+                <ComponentMessage
+                    title="3D Scan Effect"
+                    description="Add an Image and Depth map to create stunning 3D scanning effects"
+                />
+            </div>
         )
     }
 
     return (
         <ContextProvider>
+            <div style={{ width: "100%", height: "100%" }}>
             <Html
                 textureMap={props.textureMap}
                 depthMap={props.depthMap}
@@ -1287,6 +1312,8 @@ export default function Home(props: {
                 animation={props.animation}
                 hover={props.hover}
             ></Html>
+            </div>
+
         </ContextProvider>
     )
 }

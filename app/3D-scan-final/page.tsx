@@ -330,6 +330,55 @@ function resolveTokenColor(input: any): any {
     return extractDefaultValue(input)
 }
 
+// Parse CSS color strings (hex, hexa, rgb, rgba) into 0..1 RGBA
+function parseColorToRgba(input: string): { r: number; g: number; b: number; a: number } {
+    if (!input) return { r: 1, g: 1, b: 1, a: 1 }
+    const str = input.trim()
+
+    // rgba(R,G,B,A)
+    const rgbaMatch = str.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)/i)
+    if (rgbaMatch) {
+        const r = Math.max(0, Math.min(255, parseFloat(rgbaMatch[1]))) / 255
+        const g = Math.max(0, Math.min(255, parseFloat(rgbaMatch[2]))) / 255
+        const b = Math.max(0, Math.min(255, parseFloat(rgbaMatch[3]))) / 255
+        const a = rgbaMatch[4] !== undefined ? Math.max(0, Math.min(1, parseFloat(rgbaMatch[4]))) : 1
+        return { r, g, b, a }
+    }
+
+    // #RRGGBBAA or #RRGGBB
+    const hex = str.replace(/^#/, "")
+    if (hex.length === 8) {
+        const r = parseInt(hex.slice(0, 2), 16) / 255
+        const g = parseInt(hex.slice(2, 4), 16) / 255
+        const b = parseInt(hex.slice(4, 6), 16) / 255
+        const a = parseInt(hex.slice(6, 8), 16) / 255
+        return { r, g, b, a }
+    }
+    if (hex.length === 6) {
+        const r = parseInt(hex.slice(0, 2), 16) / 255
+        const g = parseInt(hex.slice(2, 4), 16) / 255
+        const b = parseInt(hex.slice(4, 6), 16) / 255
+        return { r, g, b, a: 1 }
+    }
+    if (hex.length === 4) {
+        // #RGBA
+        const r = parseInt(hex[0] + hex[0], 16) / 255
+        const g = parseInt(hex[1] + hex[1], 16) / 255
+        const b = parseInt(hex[2] + hex[2], 16) / 255
+        const a = parseInt(hex[3] + hex[3], 16) / 255
+        return { r, g, b, a }
+    }
+    if (hex.length === 3) {
+        // #RGB
+        const r = parseInt(hex[0] + hex[0], 16) / 255
+        const g = parseInt(hex[1] + hex[1], 16) / 255
+        const b = parseInt(hex[2] + hex[2], 16) / 255
+        return { r, g, b, a: 1 }
+    }
+    // Fallback white
+    return { r: 1, g: 1, b: 1, a: 1 }
+}
+
 // WebGPUCanvas Component
 export const WebGPUCanvas = (props: any) => {
     return (
@@ -478,38 +527,20 @@ const Scene = ({
         }
     }, [isAspectReady, setIsLoading])
 
-    // Memoized color conversion - only recalculates when dotColor changes
-    const rgbColor = useMemo(() => {
-        const hexToRgb = (hex: string) => {
-            // Handle rgb() format
-            const rgbMatch = hex.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
-            if (rgbMatch) {
-                return {
-                    r: parseInt(rgbMatch[1]) / 255,
-                    g: parseInt(rgbMatch[2]) / 255,
-                    b: parseInt(rgbMatch[3]) / 255,
-                }
-            }
-
-            // Handle hex format
-            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
-            return result
-                ? {
-                      r: parseInt(result[1], 16) / 255,
-                      g: parseInt(result[2], 16) / 255,
-                      b: parseInt(result[3], 16) / 255,
-                  }
-                : { r: 1, g: 0, b: 0 }
-        }
-
-        return hexToRgb(dotColor || "#ffffff")
+    // Memoized color conversion with alpha support
+    const rgbaColor = useMemo(() => {
+        return parseColorToRgba(dotColor || "#ffffff")
     }, [dotColor])
 
     // Create background material for when texture is hidden
     const backgroundMaterial = useMemo(() => {
+        const rgba = parseColorToRgba(backgroundColor)
+        const toHex = (v: number) => Math.round(v * 255).toString(16).padStart(2, "0")
+        const hex = `#${toHex(rgba.r)}${toHex(rgba.g)}${toHex(rgba.b)}`
         return new MeshBasicMaterial({
-            color: backgroundColor,
-            transparent: false,
+            color: hex,
+            transparent: rgba.a < 1,
+            opacity: rgba.a,
         })
     }, [backgroundColor])
 
@@ -526,6 +557,7 @@ const Scene = ({
         uProgress: { value: 0 },
         uDepthMap: { value: null as any },
         uColor: { value: new Vector3(0, 1, 0) },
+        uColorAlpha: { value: rgbaColor.a ?? 1 },
         uEffectType: { value: effectType === "dots" ? 0.0 : 1.0 },
         uDotSize: { value: dotSize },
         uTilingScale: { value: tilingScale },
@@ -574,7 +606,8 @@ const Scene = ({
 
         // Set initial uniforms - this ensures canvas environment shows correct values
         uniformsRef.current.uProgress.value = progress
-        uniformsRef.current.uColor.value.set(rgbColor.r, rgbColor.g, rgbColor.b)
+        uniformsRef.current.uColor.value.set(rgbaColor.r, rgbaColor.g, rgbaColor.b)
+        uniformsRef.current.uColorAlpha.value = rgbaColor.a ?? 1
         uniformsRef.current.uEffectType.value = effectTypeValue
         uniformsRef.current.uDotSize.value = dotSize
         uniformsRef.current.uTilingScale.value = tilingScale
@@ -591,7 +624,7 @@ const Scene = ({
         uniformsRef.current.uAspectRatio.value = imageAspectRatio
     }, [
         progress,
-        rgbColor,
+        rgbaColor,
         effectType,
         dotSize,
         tilingScale,
@@ -623,10 +656,11 @@ const Scene = ({
 
         if (prev.dotColor !== dotColor) {
             uniformsRef.current.uColor.value.set(
-                rgbColor.r,
-                rgbColor.g,
-                rgbColor.b
+                rgbaColor.r,
+                rgbaColor.g,
+                rgbaColor.b
             )
+            uniformsRef.current.uColorAlpha.value = rgbaColor.a ?? 1
             prev.dotColor = dotColor
         }
 
@@ -708,6 +742,7 @@ const Scene = ({
             uniform float uProgress;
             uniform sampler2D uDepthMap;
             uniform vec3 uColor;
+            uniform float uColorAlpha;
             uniform float uEffectType;
             uniform float uDotSize;
             uniform float uTilingScale;
@@ -789,7 +824,7 @@ const Scene = ({
                 float final = max(dotEffect, dotBloom) * uIntensity;
                 // Apply global progress envelope so effect is invisible at start and end
                 final *= progressEnvelope;
-                gl_FragColor = vec4(uColor * final, final);
+                gl_FragColor = vec4(uColor * final, final * uColorAlpha);
               } else {
                 // For gradient line effect - use same stretched band so edges start/end at 0
                 float exactProgress = abs(depth - stretchedProgress);
@@ -828,7 +863,7 @@ const Scene = ({
                 finalOpacity *= progressEnvelope;
                 
                 // Apply color and intensity
-                gl_FragColor = vec4(uColor * finalOpacity * uIntensity, finalOpacity);
+                gl_FragColor = vec4(uColor * finalOpacity * uIntensity, finalOpacity * uColorAlpha);
               }
             }
           `}

@@ -37,13 +37,14 @@ export default function PathReveal(props:any) {
         opacity,
         progress,
         scrollSpeed,
+        speed,
         startPosition,
     } = props
     const { scrollY } = useViewportScroll()
     const drawProgress = useMotionValue(0)
     const triggerYRef = React.useRef<number | null>(null)
 
-    // Start when the path reaches the chosen viewport anchor; then complete over `scrollSpeed` pixels
+    // Start when the path reaches the chosen viewport anchor; then complete over computed distance
     React.useEffect(() => {
         const unsubscribe = scrollY.onChange((y) => {
             if (!pathRef.current) return
@@ -71,7 +72,8 @@ export default function PathReveal(props:any) {
                 triggerYRef.current = y
             }
 
-            const distance = Math.max(1, Number(scrollSpeed) || 1)
+            const speedFactor = Number(speed ?? scrollSpeed ?? 1) || 1
+            const distance = Math.max(1, Math.round(window.innerHeight / speedFactor))
             const progressed = (y - (triggerYRef.current as number)) / distance
             const clamped = Math.max(0, Math.min(1, progressed))
             drawProgress.set(clamped)
@@ -80,7 +82,7 @@ export default function PathReveal(props:any) {
         return () => {
             unsubscribe()
         }
-    }, [scrollY, startPosition, scrollSpeed])
+    }, [scrollY, startPosition, speed, scrollSpeed])
 
     // Resolve opacity start/end from object prop
     const opacityStart: number =
@@ -98,16 +100,16 @@ export default function PathReveal(props:any) {
         Math.min(1, progress?.end ?? 1)
     )
 
-    // Dash-based drawing for precise segment control
+    // Dash-based drawing for precise segment control (used for partial segments)
     const segmentPortion = Math.max(0, rangeEnd - rangeStart)
     const [totalLength, setTotalLength] = React.useState<number>(0)
-    const segmentPxMV = useTransform(drawProgress, (v) =>
-        segmentPortion * v * totalLength
-    )
-    const dasharrayMV = useTransform(segmentPxMV, (px) =>
-        `${Math.min(totalLength, Math.max(0, px))} ${Math.max(1, totalLength)}`
-    )
-    const dashoffsetMV = useTransform(drawProgress, () => rangeStart * totalLength)
+    const dasharrayMV = useTransform(drawProgress, (v) => {
+        const draw = Math.max(0, segmentPortion * v * totalLength)
+        const gapBefore = Math.max(0, rangeStart * totalLength)
+        const gapAfter = Math.max(0, totalLength - gapBefore - draw)
+        return `${gapBefore} ${draw} ${gapAfter}`
+    })
+    const dashoffsetMV = 0
     const strokeOpacityMV = useTransform(drawProgress, (v) =>
         opacityStart + (opacityEnd - opacityStart) * v
     )
@@ -178,7 +180,20 @@ export default function PathReveal(props:any) {
             preserveAspectRatio="xMidYMid meet"
             overflow="visible"
         >
-            <motion.path
+            {rangeStart === 0 && rangeEnd === 1 ? (
+                <motion.path
+                    ref={pathRef}
+                    d={svgPath}
+                    stroke={beamColor}
+                    strokeWidth={beamWidth}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeOpacity={strokeOpacityMV}
+                    fill="none"
+                    style={{ pathLength: drawProgress }}
+                />
+            ) : (
+                <motion.path
                 ref={pathRef}
                 d={svgPath}
                 stroke={beamColor}
@@ -188,7 +203,8 @@ export default function PathReveal(props:any) {
                 strokeOpacity={strokeOpacityMV}
                 fill="none"
                 style={{ strokeDasharray: dasharrayMV, strokeDashoffset: dashoffsetMV }}
-            />
+                />
+            )}
         </svg>
     )
 }
@@ -201,8 +217,9 @@ PathReveal.defaultProps = {
     beamWidth: 1,
     opacity: { start: 0, end: 1 },
     progress: { start: 0, end: 1 },
-    // Pixels required after the start trigger to go from 0 -> 1
-    scrollSpeed: 1000,
+    // Back-compat: speed maps to viewportHeight / speed
+    speed: 1,
+    scrollSpeed: 0,
     startPosition: "center",
 }
 
@@ -287,12 +304,11 @@ addPropertyControls(PathReveal, {
             },
         },
     },
-    scrollSpeed: {
+    speed: {
         type: ControlType.Number,
-        title: "Scroll Distance",
-        min: 1,
-        max: 10000,
-        step: 1,
-        displayStepper: true,
+        title: "Speed",
+        min: 0.1,
+        max: 10,
+        step: 0.1,
     },
 })

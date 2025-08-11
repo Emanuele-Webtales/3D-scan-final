@@ -1,10 +1,5 @@
 import * as React from "react"
-import {
-    motion,
-    useTransform,
-    useViewportScroll,
-    useAnimation,
-} from "framer-motion"
+import { motion, useTransform, useViewportScroll } from "framer-motion"
 import {
     addPropertyControls,
     ControlType,
@@ -32,17 +27,39 @@ export default function PathReveal(props:any) {
         svgFile,
         beamColor,
         beamWidth,
-        startOpacity,
-        endOpacity,
+        opacity,
+        progress,
         scrollSpeed,
     } = props
     const { scrollYProgress } = useViewportScroll()
-    const pathLength = useTransform(
-        scrollYProgress,
-        [0, 1],
-        [0, 1 * scrollSpeed]
+    // Normalized draw progress that accounts for scrollSpeed and clamps to [0, 1]
+    const drawProgress = useTransform(scrollYProgress, (v) =>
+        Math.max(0, Math.min(1, v * scrollSpeed))
     )
-    const controls = useAnimation()
+
+    // Resolve opacity start/end from object prop
+    const opacityStart: number =
+        (opacity && typeof opacity.start === "number" ? opacity.start : 0) || 0
+    const opacityEnd: number =
+        (opacity && typeof opacity.end === "number" ? opacity.end : 1) || 1
+
+    // Resolve path range [start, end] from progress object
+    const rangeStart: number = Math.max(
+        0,
+        Math.min(1, progress?.start ?? 0)
+    )
+    const rangeEnd: number = Math.max(
+        0,
+        Math.min(1, progress?.end ?? 1)
+    )
+
+    // Map drawProgress -> path length and opacity
+    const pathLengthMV = useTransform(drawProgress, (v) =>
+        rangeStart + (rangeEnd - rangeStart) * v
+    )
+    const strokeOpacityMV = useTransform(drawProgress, (v) =>
+        opacityStart + (opacityEnd - opacityStart) * v
+    )
 
     const [svgPath, setSvgPath] = React.useState<string>("")
     const svgRef = React.useRef<SVGSVGElement>(null)
@@ -60,25 +77,7 @@ export default function PathReveal(props:any) {
         }
     }, [svgFile])
 
-    React.useEffect(() => {
-        const unsubscribeY = scrollYProgress.onChange((latest) => {
-            if (latest === 1) {
-                controls.start({
-                    pathLength: 1 * scrollSpeed,
-                    transition: {
-                        type: "spring",
-                        stiffness: 100,
-                        damping: 10,
-                        mass: 0.5,
-                    },
-                })
-            }
-        })
-
-        return () => {
-            unsubscribeY()
-        }
-    }, [controls, scrollYProgress, scrollSpeed])
+    // Both path drawing and opacity are tied to the same drawProgress
 
     // Compute a proper viewBox from the actual path geometry once it's rendered
     React.useLayoutEffect(() => {
@@ -112,14 +111,9 @@ export default function PathReveal(props:any) {
                 d={svgPath}
                 stroke={beamColor}
                 strokeWidth={beamWidth}
-                strokeOpacity={useTransform(
-                    scrollYProgress,
-                    [0, 1],
-                    [startOpacity, endOpacity]
-                )}
+                strokeOpacity={strokeOpacityMV}
                 fill="none"
-                style={{ pathLength }}
-                animate={controls}
+                style={{ pathLength: pathLengthMV }}
             />
         </svg>
     )
@@ -129,8 +123,8 @@ PathReveal.defaultProps = {
     svgFile: "",
     beamColor: "#fc5025",
     beamWidth: 1,
-    startOpacity: 0,
-    endOpacity: 1,
+    opacity: { start: 0, end: 1 },
+    progress: { start: 0, end: 1 },
     scrollSpeed: 1,
 }
 
@@ -150,19 +144,49 @@ addPropertyControls(PathReveal, {
         max: 10,
         step: 0.1,
     },
-    startOpacity: {
-        type: ControlType.Number,
-        title: "Start Opacity",
-        min: 0,
-        max: 1,
-        step: 0.1,
+    opacity: {
+        type: ControlType.Object,
+        title: "Opacity",
+        controls: {
+            start: {
+                type: ControlType.Number,
+                title: "Start",
+                min: 0,
+                max: 1,
+                step: 0.01,
+                defaultValue: 0,
+            },
+            end: {
+                type: ControlType.Number,
+                title: "End",
+                min: 0,
+                max: 1,
+                step: 0.01,
+                defaultValue: 1,
+            },
+        },
     },
-    endOpacity: {
-        type: ControlType.Number,
-        title: "End Opacity",
-        min: 0,
-        max: 1,
-        step: 0.1,
+    progress: {
+        type: ControlType.Object,
+        title: "Path",
+        controls: {
+            start: {
+                type: ControlType.Number,
+                title: "Start",
+                min: 0,
+                max: 1,
+                step: 0.01,
+                defaultValue: 0,
+            },
+            end: {
+                type: ControlType.Number,
+                title: "End",
+                min: 0,
+                max: 1,
+                step: 0.01,
+                defaultValue: 1,
+            },
+        },
     },
     scrollSpeed: {
         type: ControlType.Number,

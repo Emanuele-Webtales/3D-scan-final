@@ -25,6 +25,8 @@ const extractPathFromSVG = (svgContent: string): string => {
 export default function PathReveal(props:any) {
     const {
         svgFile,
+        svgCode,
+        inputType,
         beamColor,
         beamWidth,
         opacity,
@@ -67,15 +69,30 @@ export default function PathReveal(props:any) {
     const [viewBox, setViewBox] = React.useState<string | undefined>(undefined)
 
     React.useEffect(() => {
-        if (svgFile) {
+        let cancelled = false
+        const setPath = (pathStr: string) => {
+            if (!cancelled) setSvgPath(pathStr)
+        }
+
+        if (inputType === "file" && svgFile) {
             fetch(svgFile)
                 .then((response) => response.text())
                 .then((svgContent) => {
                     const path = extractPathFromSVG(svgContent)
-                    setSvgPath(path)
+                    setPath(path)
                 })
+                .catch(() => setPath(""))
+        } else if (inputType === "code" && svgCode) {
+            const path = extractPathFromSVG(svgCode)
+            setPath(path)
+        } else {
+            setPath("")
         }
-    }, [svgFile])
+
+        return () => {
+            cancelled = true
+        }
+    }, [inputType, svgFile, svgCode])
 
     // Both path drawing and opacity are tied to the same drawProgress
 
@@ -121,6 +138,8 @@ export default function PathReveal(props:any) {
 
 PathReveal.defaultProps = {
     svgFile: "",
+    svgCode: "",
+    inputType: "file",
     beamColor: "#fc5025",
     beamWidth: 1,
     opacity: { start: 0, end: 1 },
@@ -129,13 +148,26 @@ PathReveal.defaultProps = {
 }
 
 addPropertyControls(PathReveal, {
+    inputType: {
+        type: ControlType.Enum,
+        title: "Type",
+        options: ["file", "code"],
+        optionTitles: ["File", "Code"],
+        displaySegmentedControl: true,
+        defaultValue: "file",
+    },
     svgFile: {
         type: ControlType.File,
         title: "SVG File",
         allowedFileTypes: ["svg"],
-        description:
-            "Upload single node SVG. It will be used as the path for beam to follow",
+        hidden: (props) => props.inputType !== "file",
     } as FileControlDescription,
+    svgCode: {
+        type: ControlType.String,
+        title: " ",
+        displayTextArea: true,
+        hidden: (props) => props.inputType !== "code",
+    },
     beamColor: { type: ControlType.Color, title: "Beam Color" },
     beamWidth: {
         type: ControlType.Number,

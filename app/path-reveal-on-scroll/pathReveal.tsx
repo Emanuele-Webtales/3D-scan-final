@@ -1,5 +1,10 @@
 import * as React from "react"
-import { motion, useTransform, useViewportScroll } from "framer-motion"
+import {
+    motion,
+    useTransform,
+    useViewportScroll,
+    useMotionValue,
+} from "framer-motion"
 import {
     addPropertyControls,
     ControlType,
@@ -32,12 +37,50 @@ export default function PathReveal(props:any) {
         opacity,
         progress,
         scrollSpeed,
+        startPosition,
     } = props
-    const { scrollYProgress } = useViewportScroll()
-    // Normalized draw progress that accounts for scrollSpeed and clamps to [0, 1]
-    const drawProgress = useTransform(scrollYProgress, (v) =>
-        Math.max(0, Math.min(1, v * scrollSpeed))
-    )
+    const { scrollY } = useViewportScroll()
+    const drawProgress = useMotionValue(0)
+    const triggerYRef = React.useRef<number | null>(null)
+
+    // Start when the path reaches the chosen viewport anchor; then complete over `scrollSpeed` pixels
+    React.useEffect(() => {
+        const unsubscribe = scrollY.onChange((y) => {
+            if (!pathRef.current) return
+            const rect = pathRef.current.getBoundingClientRect()
+            const vh = window.innerHeight
+            const anchorY =
+                startPosition === "top"
+                    ? rect.top
+                    : startPosition === "center"
+                    ? rect.top + rect.height / 2
+                    : rect.bottom
+            // We want to trigger only when the chosen anchor crosses upward past the line
+            const thresholdY =
+                startPosition === "top" ? 0 : startPosition === "center" ? vh / 2 : vh
+
+            // Reset trigger if element is above the threshold (before start)
+            if (anchorY > thresholdY) {
+                triggerYRef.current = null
+                drawProgress.set(0)
+                return
+            }
+
+            // Lock trigger only when the anchor is at or above the threshold (crossed)
+            if (triggerYRef.current == null && anchorY <= thresholdY) {
+                triggerYRef.current = y
+            }
+
+            const distance = Math.max(1, Number(scrollSpeed) || 1)
+            const progressed = (y - (triggerYRef.current as number)) / distance
+            const clamped = Math.max(0, Math.min(1, progressed))
+            drawProgress.set(clamped)
+        })
+
+        return () => {
+            unsubscribe()
+        }
+    }, [scrollY, startPosition, scrollSpeed])
 
     // Resolve opacity start/end from object prop
     const opacityStart: number =
@@ -144,7 +187,9 @@ PathReveal.defaultProps = {
     beamWidth: 1,
     opacity: { start: 0, end: 1 },
     progress: { start: 0, end: 1 },
-    scrollSpeed: 1,
+    // Pixels required after the start trigger to go from 0 -> 1
+    scrollSpeed: 1000,
+    startPosition: "center",
 }
 
 addPropertyControls(PathReveal, {
@@ -167,6 +212,14 @@ addPropertyControls(PathReveal, {
         title: " ",
         displayTextArea: true,
         hidden: (props) => props.inputType !== "code",
+    },
+    startPosition: {
+        type: ControlType.Enum,
+        title: "Start",
+        defaultValue: "center",
+        options: ["top", "center", "bottom"],
+        optionTitles: ["Top", "Center", "Bottom"],
+        displaySegmentedControl: true,
     },
     beamColor: { type: ControlType.Color, title: "Beam Color" },
     beamWidth: {
@@ -222,9 +275,10 @@ addPropertyControls(PathReveal, {
     },
     scrollSpeed: {
         type: ControlType.Number,
-        title: "Scroll Speed",
-        min: 0.1,
-        max: 10,
-        step: 0.1,
+        title: "Scroll Distance",
+        min: 1,
+        max: 10000,
+        step: 1,
+        displayStepper: true,
     },
 })

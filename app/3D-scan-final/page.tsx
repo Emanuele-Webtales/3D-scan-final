@@ -988,9 +988,24 @@ const Html = ({
     const [hasActivated, setHasActivated] = useState(
         RenderTarget.current() === RenderTarget.canvas
     )
+    const [assetsReady, setAssetsReady] = useState(false)
 
     const containerRef = useRef<HTMLDivElement>(null)
     const animationControlsRef = useRef<any>(null)
+
+    // Resolve asset URLs for preloading and fallback
+    const hasTextureMapProp = !!(
+        textureMap && (textureMap.src || typeof textureMap === "string")
+    )
+    const hasDepthMapProp = !!(
+        depthMap && (depthMap.src || typeof depthMap === "string")
+    )
+    const textureMapUrl = hasTextureMapProp
+        ? (textureMap as any)?.src || (textureMap as any)
+        : undefined
+    const depthMapUrl = hasDepthMapProp
+        ? (depthMap as any)?.src || (depthMap as any)
+        : undefined
 
     // Animation function - plays once or loops
     const startLoop = (startFrom = 0, forceProgressUpdate = false) => {
@@ -1344,11 +1359,33 @@ const Html = ({
                     }
                 }
             },
-            { root: null, threshold: 0.01, rootMargin: "200px 0px" }
+            { root: null, threshold: 0.01, rootMargin: "600px 0px" }
         )
         observer.observe(el)
         return () => observer.disconnect()
     }, [isHovering, isLoading, progress, hasActivated])
+
+    // Preload images at low priority so the effect can show instantly on activation
+    useEffect(() => {
+        let cancelled = false
+        const urls = [textureMapUrl, depthMapUrl].filter(Boolean) as string[]
+        if (urls.length === 0) return
+        const preload = (url: string) =>
+            new Promise<void>((resolve) => {
+                const img = new Image()
+                ;(img as any).fetchPriority = "low"
+                img.decoding = "async"
+                img.onload = () => resolve()
+                img.onerror = () => resolve()
+                img.src = url
+            })
+        Promise.all(urls.map(preload)).then(() => {
+            if (!cancelled) setAssetsReady(true)
+        })
+        return () => {
+            cancelled = true
+        }
+    }, [textureMapUrl, depthMapUrl])
 
     return (
     
@@ -1374,6 +1411,33 @@ const Html = ({
                         }}
                         aria-hidden="true"
                     />
+                    {!hasActivated && (
+                        <div style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+                            {showTexture && textureMapUrl ? (
+                                <img
+                                    src={textureMapUrl as string}
+                                    alt=""
+                                    style={{
+                                        position: "absolute",
+                                        inset: 0,
+                                        width: "100%",
+                                        height: "100%",
+                                        objectFit: "cover",
+                                    }}
+                                />
+                            ) : (
+                                <div
+                                    style={{
+                                        position: "absolute",
+                                        inset: 0,
+                                        width: "100%",
+                                        height: "100%",
+                                        background: resolvedBackgroundColor as string,
+                                    }}
+                                />
+                            )}
+                        </div>
+                    )}
                     {hasActivated && (
                         <WebGPUCanvas>
                             <PostProcessing></PostProcessing>

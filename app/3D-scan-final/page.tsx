@@ -959,6 +959,14 @@ const Html = ({
 
     // Animation function - plays once or loops
     const startLoop = (startFrom = 0, forceProgressUpdate = false) => {
+        const scaleTransitionDuration = (transition: any, ratio: number) => {
+            if (!transition) return transition
+            const r = Math.max(0, Math.min(1, ratio))
+            if (typeof transition.duration === "number" && transition.duration > 0) {
+                return { ...transition, duration: transition.duration * r }
+            }
+            return transition
+        }
         console.log(
             "startLoop called with startFrom:",
             startFrom,
@@ -989,8 +997,10 @@ const Html = ({
         }
 
         if ((propAnimation?.play ?? "once") === "once") {
+            const remainingRatio = Math.max(0, 1 - startFrom)
+            const adjusted = scaleTransitionDuration(loopTransition, remainingRatio)
             animationControlsRef.current = animate(startFrom, 1, {
-                ...loopTransition,
+                ...adjusted,
                 onUpdate: (latest) => {
                     setLoopProgress(latest)
                     // Only set the main progress if not hovering and not transitioning, or if forcing update
@@ -1007,8 +1017,10 @@ const Html = ({
             loopType === "repeat"
         ) {
             const animateForward = (currentValue = startFrom) => {
+                const remainingRatio = Math.max(0, 1 - currentValue)
+                const adjusted = scaleTransitionDuration(loopTransition, remainingRatio)
                 animationControlsRef.current = animate(currentValue, 1, {
-                    ...loopTransition,
+                    ...adjusted,
                     onUpdate: (latest) => {
                         setLoopProgress(latest)
                         // Only set the main progress if not hovering and not transitioning
@@ -1024,7 +1036,27 @@ const Html = ({
                             (propAnimation?.play ?? "once") === "loop" &&
                             loopType === "repeat"
                         ) {
-                            animateForward(0) // Restart from 0 for next cycle
+                            // Restart next cycles with the base duration (full length)
+                            animationControlsRef.current = animate(0, 1, {
+                                ...loopTransition,
+                                onUpdate: (latest) => {
+                                    setLoopProgress(latest)
+                                    if (
+                                        forceProgressUpdate ||
+                                        (!isHovering && !isTransitioning)
+                                    ) {
+                                        setProgress(latest)
+                                    }
+                                },
+                                onComplete: () => {
+                                    if (
+                                        (propAnimation?.play ?? "once") === "loop" &&
+                                        loopType === "repeat"
+                                    ) {
+                                        animateForward(0)
+                                    }
+                                },
+                            })
                         }
                     },
                 })
@@ -1039,8 +1071,10 @@ const Html = ({
 
             const animateMirror = () => {
                 const target = direction === 1 ? 1 : 0
+                const remainingRatio = Math.abs(target - currentValue)
+                const adjusted = scaleTransitionDuration(loopTransition, remainingRatio)
                 animationControlsRef.current = animate(currentValue, target, {
-                    ...loopTransition,
+                    ...adjusted,
                     onUpdate: (latest) => {
                         currentValue = latest
                         setLoopProgress(latest)
@@ -1058,7 +1092,22 @@ const Html = ({
                             loopType === "mirror"
                         ) {
                             direction *= -1 // Reverse direction
-                            animateMirror() // Continue mirror animation
+                            // Subsequent legs use the base transition duration
+                            const nextTarget = direction === 1 ? 1 : 0
+                            animationControlsRef.current = animate(currentValue, nextTarget, {
+                                ...loopTransition,
+                                onUpdate: (latest) => {
+                                    currentValue = latest
+                                    setLoopProgress(latest)
+                                    if (
+                                        forceProgressUpdate ||
+                                        (!isHovering && !isTransitioning)
+                                    ) {
+                                        setProgress(latest)
+                                    }
+                                },
+                                onComplete: animateMirror,
+                            })
                         }
                     },
                 })

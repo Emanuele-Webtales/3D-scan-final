@@ -177,8 +177,8 @@ export default function PathReveal(props:any) {
             if (groupRef.current) {
                 const bbox = groupRef.current.getBBox()
                 if (bbox && bbox.width > 0 && bbox.height > 0) {
-                    // Expand viewBox with padding so rounded caps are not clipped
-                    const pad = Math.max(1, Math.max(bbox.width, bbox.height) * 0.02)
+                    // Pad by half the stroke width
+                    const pad = Math.max(0, (computedStrokeWidth || beamWidth) / 2)
                     setViewBox(
                         `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`
                     )
@@ -189,7 +189,7 @@ export default function PathReveal(props:any) {
             }
         })
         return () => cancelAnimationFrame(id)
-    }, [svgPaths])
+    }, [svgPaths, computedStrokeWidth, beamWidth])
 
     // Keep stroke width in screen pixels by adjusting based on SVG scale
     React.useEffect(() => {

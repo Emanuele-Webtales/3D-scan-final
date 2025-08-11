@@ -30,6 +30,10 @@ import { animate } from "framer-motion"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
 import { ComponentMessage } from "https://framer.com/m/Utils-FINc.js"
 
+// Intrinsic size used to avoid width/height collapse in Canvas
+const INTRINSIC_WIDTH = 600
+const INTRINSIC_HEIGHT = 400
+
 // Dynamic aspect ratio will be calculated from the actual images
 
 // Mobile/touch detection hook
@@ -1191,52 +1195,58 @@ const Html = ({
     }
 
     return (
-        <div
-            style={{
-                width: "100%",
-                height: "100%",
-                display: "flex",
-                justifyContent: "center",
-                alignItems: "center",
-            }}
-        >
-            <div
-                style={{ height: "100%", width: "100%", position: "relative" }}
-                ref={containerRef}
-                onMouseMove={handleMouseMove}
-                onMouseEnter={handleMouseEnter}
-                onMouseLeave={handleMouseLeave}
-            >
-                <WebGPUCanvas>
-                    <PostProcessing></PostProcessing>
-                    <Scene
-                        dotSize={dotSize}
-                        dotColor={resolvedDotColor || "#ffffff"}
-                        tilingScale={tilingScale}
-                        effectType={effectType}
-                        gradientWidth={gradientWidth / 10}
-                        intensity={intensity}
-                        bloomStrength={bloomStrength}
-                        bloomRadius={bloomRadius}
-                        showTexture={showTexture}
-                        backgroundColor={resolvedBackgroundColor || "#000000"}
-                        progress={progress}
-                        textureMap={textureMap}
-                        depthMap={depthMap}
+    
+                <div
+                    style={{ height: "100%", width: "100%", position: "relative", display: "flex", justifyContent: "center", alignItems: "center"}}
+                    ref={containerRef}
+                    onMouseMove={handleMouseMove}
+                    onMouseEnter={handleMouseEnter}
+                    onMouseLeave={handleMouseLeave}
+                >
+                    {/* Intrinsic sizing spacer moved here so it doesn't affect outer layout */}
+                    <div
+                        style={{
+                            width: `${INTRINSIC_WIDTH}px`,
+                            height: `${INTRINSIC_HEIGHT}px`,
+                            minWidth: `${INTRINSIC_WIDTH}px`,
+                            minHeight: `${INTRINSIC_HEIGHT}px`,
+                            visibility: "hidden",
+                            position: "absolute",
+                            inset: 0,
+                            zIndex: -1,
+                            pointerEvents: "none",
+                        }}
+                        aria-hidden="true"
                     />
-                </WebGPUCanvas>
-            </div>
-        </div>
+                    <WebGPUCanvas>
+                        <PostProcessing></PostProcessing>
+                        <Scene
+                            dotSize={dotSize}
+                            dotColor={resolvedDotColor || "#ffffff"}
+                            tilingScale={tilingScale}
+                            effectType={effectType}
+                            gradientWidth={gradientWidth / 10}
+                            intensity={intensity}
+                            bloomStrength={bloomStrength}
+                            bloomRadius={bloomRadius}
+                            showTexture={showTexture}
+                            backgroundColor={resolvedBackgroundColor || "#000000"}
+                            progress={progress}
+                            textureMap={textureMap}
+                            depthMap={depthMap}
+                        />
+                    </WebGPUCanvas>
+                </div>
+            
     )
 }
 
 /**
- *
- * @framerIntrinsicWidth 600
- * @framerIntrinsicHeight 300
- * @framerDisableUnlink
  * @framerSupportedLayoutWidth any-prefer-fixed
  * @framerSupportedLayoutHeight any-prefer-fixed
+ * @framerIntrinsicWidth 600
+ * @framerIntrinsicHeight 400
+ * @framerDisableUnlink
  */
 
 export default function Home(props: {
@@ -1286,35 +1296,60 @@ export default function Home(props: {
     // Show ComponentMessage if both images are missing
     if (!hasTextureMap && !hasDepthMap) {
         return (
-            <div style={{ height: "100%", width: "100%" }}>
-                <ComponentMessage
-                    title="3D Scan Effect"
-                    description="Add an Image and Depth map to create stunning 3D scanning effects"
+            <div style={{ height: "100%", width: "100%", position: "relative" }}>
+                {/* Invisible sizing element - provides intrinsic dimensions for Fit sizing (prevents 40px/0px collapse) */}
+                <div
+                    style={{
+                        width: `${INTRINSIC_WIDTH}px`,
+                        height: `${INTRINSIC_HEIGHT}px`,
+                        minWidth: `${INTRINSIC_WIDTH}px`,
+                        minHeight: `${INTRINSIC_HEIGHT}px`,
+                        visibility: "hidden",
+                    }}
+                    aria-hidden="true"
                 />
+
+                {/* Overlay the message so the spacer does not push it */}
+                <div
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                    }}
+                >
+                    <ComponentMessage
+                        style={{ position: "relative", width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "center" }}
+                        title="3D Scan Effect"
+                        description="Add an Image and Depth map to create stunning 3D scanning effects"
+                    />
+                </div>
             </div>
         )
     }
 
     return (
-        <ContextProvider>
-            <div style={{ width: "100%", height: "100%" }}>
-            <Html
-                textureMap={props.textureMap}
-                depthMap={props.depthMap}
-                dotColor={props.dotColor}
-                effectType={props.effectType}
-                intensity={props.intensity}
-                showTexture={props.showTexture}
-                backgroundMode={props.backgroundMode}
-                backgroundColor={props.backgroundColor}
-                gradient={props.gradient}
-                dots={props.dots}
-                animation={props.animation}
-                hover={props.hover}
-            ></Html>
-            </div>
-
-        </ContextProvider>
+        <div style={{ width: "100%", height: "100%", position: "relative", display: "flex", justifyContent: "center", alignItems: "center"}}>
+            <ContextProvider>
+                <div style={{ width: "100%", height: "100%", position: "relative", display: "flex", justifyContent: "center", alignItems: "center"}}>
+                    <Html
+                        textureMap={props.textureMap}
+                        depthMap={props.depthMap}
+                        dotColor={props.dotColor}
+                        effectType={props.effectType}
+                        intensity={props.intensity}
+                        showTexture={props.showTexture}
+                        backgroundMode={props.backgroundMode}
+                        backgroundColor={props.backgroundColor}
+                        gradient={props.gradient}
+                        dots={props.dots}
+                        animation={props.animation}
+                        hover={props.hover}
+                    ></Html>
+                </div>
+            </ContextProvider>
+        </div>
     )
 }
 

@@ -395,6 +395,7 @@ interface SceneProps {
     showTexture: boolean
     backgroundColor: string
     progress: number
+    active?: boolean
 }
 
 const Scene = ({
@@ -409,6 +410,7 @@ const Scene = ({
     showTexture,
     backgroundColor,
     progress,
+    active,
     textureMap,
     depthMap,
 }: SceneProps & { textureMap?: any; depthMap?: any }) => {
@@ -603,6 +605,7 @@ const Scene = ({
 
     // Update uniforms for the effects shader - optimized to only update when values change
     useFrame(() => {
+        if (active === false) return
         // For canvas environment, we already handle updates via useEffect above
         // For live environment, we need frame-by-frame updates for smooth animations
         if (RenderTarget.current() === RenderTarget.canvas) {
@@ -946,6 +949,10 @@ const Html = ({
     const [isTransitioning, setIsTransitioning] = useState(false)
     const [transitionStartProgress, setTransitionStartProgress] = useState(0)
     const [transitionStartTime, setTransitionStartTime] = useState(0)
+    const [inViewport, setInViewport] = useState(true)
+    const [hasActivated, setHasActivated] = useState(
+        RenderTarget.current() === RenderTarget.canvas
+    )
 
     const containerRef = useRef<HTMLDivElement>(null)
     const animationControlsRef = useRef<any>(null)
@@ -959,7 +966,11 @@ const Html = ({
             forceProgressUpdate
         )
 
-        if (RenderTarget.current() === RenderTarget.canvas || isLoading) {
+        if (
+            RenderTarget.current() === RenderTarget.canvas ||
+            isLoading ||
+            !inViewport
+        ) {
             if (animationControlsRef.current) {
                 animationControlsRef.current.stop()
                 animationControlsRef.current = null
@@ -1058,7 +1069,11 @@ const Html = ({
 
     // Auto-start animation (skip in canvas to keep static mid-state)
     useEffect(() => {
-        if (RenderTarget.current() !== RenderTarget.canvas && !isHovering) {
+        if (
+            RenderTarget.current() !== RenderTarget.canvas &&
+            !isHovering &&
+            inViewport
+        ) {
             startLoop(0, false)
         }
 
@@ -1068,7 +1083,7 @@ const Html = ({
                 animationControlsRef.current = null
             }
         }
-    }, [propAnimation?.play, loopType, loopTransition, isLoading])
+    }, [propAnimation?.play, loopType, loopTransition, isLoading, inViewport])
 
     // Handle hover state changes
     useEffect(() => {
@@ -1218,6 +1233,39 @@ const Html = ({
         startLoop(currentProgress, true)
     }
 
+    // Observe visibility to pause/resume animation and lazy-activate heavy subtree on first view
+    useEffect(() => {
+        const el = containerRef.current
+        if (!el) return
+        const observer = new IntersectionObserver(
+            (entries) => {
+                const entry = entries[0]
+                const visible = !!entry?.isIntersecting
+                setInViewport(visible)
+                if (!visible) {
+                    if (animationControlsRef.current) {
+                        animationControlsRef.current.stop()
+                    }
+                } else {
+                    if (!hasActivated) {
+                        setHasActivated(true)
+                    }
+                    if (
+                        RenderTarget.current() !== RenderTarget.canvas &&
+                        !isHovering &&
+                        !isLoading
+                    ) {
+                        // Resume from current progress
+                        startLoop(progress, false)
+                    }
+                }
+            },
+            { root: null, threshold: 0.01, rootMargin: "200px 0px" }
+        )
+        observer.observe(el)
+        return () => observer.disconnect()
+    }, [isHovering, isLoading, progress, hasActivated])
+
     return (
     
                 <div
@@ -1242,24 +1290,29 @@ const Html = ({
                         }}
                         aria-hidden="true"
                     />
-                    <WebGPUCanvas>
-                        <PostProcessing></PostProcessing>
-                        <Scene
-                            dotSize={dotSize}
-                            dotColor={resolvedDotColor || "#ffffff"}
-                            tilingScale={tilingScale}
-                            effectType={effectType}
-                            gradientWidth={gradientWidth / 10}
-                            intensity={intensity}
-                            bloomStrength={bloomStrength}
-                            bloomRadius={bloomRadius}
-                            showTexture={showTexture}
-                            backgroundColor={resolvedBackgroundColor || "#000000"}
-                            progress={progress}
-                            textureMap={textureMap}
-                            depthMap={depthMap}
-                        />
-                    </WebGPUCanvas>
+                    {hasActivated && (
+                        <WebGPUCanvas>
+                            <PostProcessing></PostProcessing>
+                            <Scene
+                                active={inViewport}
+                                dotSize={dotSize}
+                                dotColor={resolvedDotColor || "#ffffff"}
+                                tilingScale={tilingScale}
+                                effectType={effectType}
+                                gradientWidth={gradientWidth / 10}
+                                intensity={intensity}
+                                bloomStrength={bloomStrength}
+                                bloomRadius={bloomRadius}
+                                showTexture={showTexture}
+                                backgroundColor={
+                                    resolvedBackgroundColor || "#000000"
+                                }
+                                progress={progress}
+                                textureMap={textureMap}
+                                depthMap={depthMap}
+                            />
+                        </WebGPUCanvas>
+                    )}
                 </div>
             
     )

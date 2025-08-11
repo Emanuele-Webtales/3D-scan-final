@@ -25,8 +25,9 @@ const extractPathsFromSVG = (svgContent: string): string[] => {
 // Fallback SVG (used when no SVG is provided)
 const FALLBACK_SVG = `
 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M12 7.2294C10.2671 3.30561 6.23596 2.95683 4.35874 4.66804C2.83049 6.04137 2.09645 9.33298 3.49233 12.363C5.89902 17.573 12 20.3087 12 20.3087C12 20.3087 18.101 17.573 20.5076 12.363C21.9036 9.33298 21.1695 6.04137 19.6413 4.66804C17.764 2.95683 13.7328 3.30561 12 7.2294Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>`
+<path d="M12.4952 18.5868L16.5874 20.7373C16.7603 20.8282 16.9552 20.8688 17.15 20.8544C17.3448 20.84 17.5316 20.7713 17.6893 20.656C17.847 20.5408 17.9692 20.3836 18.042 20.2023C18.1148 20.0211 18.1352 19.823 18.1011 19.6307L17.3181 15.0792C17.289 14.9114 17.3013 14.739 17.3541 14.577C17.4069 14.4151 17.4984 14.2685 17.6209 14.1501L20.9301 10.9243C21.0709 10.7888 21.1707 10.6166 21.2184 10.4271C21.2661 10.2377 21.2597 10.0387 21.1999 9.8527C21.14 9.66672 21.0292 9.50127 20.8801 9.37514C20.7309 9.24902 20.5493 9.16728 20.356 9.13923L15.7836 8.48155C15.6163 8.45643 15.4577 8.39105 15.3213 8.29103C15.1849 8.19102 15.0749 8.05936 15.0006 7.90739L12.9128 3.73168C12.8273 3.55518 12.6938 3.40633 12.5276 3.30218C12.3615 3.19803 12.1693 3.14279 11.9732 3.14279C11.7771 3.14279 11.585 3.19803 11.4188 3.30218C11.2526 3.40633 11.1192 3.55518 11.0337 3.73168L8.94584 7.90739C8.87161 8.05936 8.76156 8.19102 8.62518 8.29103C8.48879 8.39105 8.33015 8.45643 8.16289 8.48155L3.65312 9.13923C3.45894 9.16566 3.27611 9.24622 3.12556 9.37169C2.97502 9.49716 2.86283 9.66248 2.80183 9.84872C2.74084 10.035 2.73351 10.2346 2.78067 10.4248C2.82783 10.6151 2.92759 10.7882 3.06853 10.9243L6.37778 14.1501C6.5002 14.2685 6.5918 14.4151 6.64457 14.577C6.69734 14.739 6.70968 14.9114 6.68052 15.0792L5.89757 19.6307C5.86341 19.823 5.88388 20.0211 5.95667 20.2023C6.02946 20.3836 6.15164 20.5408 6.30932 20.656C6.46701 20.7713 6.65387 20.84 6.84867 20.8544C7.04347 20.8688 7.23838 20.8282 7.41126 20.7373L11.5035 18.5868C11.6558 18.5045 11.8262 18.4615 11.9993 18.4615C12.1724 18.4615 12.3428 18.5045 12.4952 18.5868Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
+`
 
 /**
  * @framerIntrinsicWidth 400
@@ -131,6 +132,7 @@ export default function PathReveal(props:any) {
     const [svgPaths, setSvgPaths] = React.useState<string[]>([])
     const svgRef = React.useRef<SVGSVGElement>(null)
     const [viewBox, setViewBox] = React.useState<string | undefined>(undefined)
+    const [computedStrokeWidth, setComputedStrokeWidth] = React.useState<number>(beamWidth)
 
     React.useEffect(() => {
         let cancelled = false
@@ -180,6 +182,37 @@ export default function PathReveal(props:any) {
         return () => cancelAnimationFrame(id)
     }, [svgPaths])
 
+    // Keep stroke width in screen pixels by adjusting based on SVG scale
+    React.useEffect(() => {
+        const updateStroke = () => {
+            if (!svgRef.current || !viewBox) {
+                setComputedStrokeWidth(beamWidth)
+                return
+            }
+            const rect = svgRef.current.getBoundingClientRect()
+            const parts = viewBox.split(" ").map(Number)
+            const vbWidth = parts[2] || 0
+            const vbHeight = parts[3] || 0
+            if (vbWidth <= 0 || vbHeight <= 0) {
+                setComputedStrokeWidth(beamWidth)
+                return
+            }
+            const scaleX = rect.width / vbWidth
+            const scaleY = rect.height / vbHeight
+            const scale = Math.min(scaleX, scaleY) || 1
+            setComputedStrokeWidth(beamWidth / scale)
+        }
+
+        updateStroke()
+        const ro = new ResizeObserver(updateStroke)
+        if (svgRef.current) ro.observe(svgRef.current)
+        window.addEventListener("resize", updateStroke)
+        return () => {
+            ro.disconnect()
+            window.removeEventListener("resize", updateStroke)
+        }
+    }, [beamWidth, viewBox])
+
     return (
         <svg
             ref={svgRef}
@@ -196,7 +229,7 @@ export default function PathReveal(props:any) {
                               key={i}
                               d={d}
                               stroke={beamColor}
-                              strokeWidth={beamWidth}
+                              strokeWidth={computedStrokeWidth}
                               strokeLinecap="butt"
                               strokeLinejoin="round"
                               strokeOpacity={1}
@@ -208,7 +241,7 @@ export default function PathReveal(props:any) {
                               key={i}
                               d={d}
                               stroke={beamColor}
-                              strokeWidth={beamWidth}
+                              strokeWidth={computedStrokeWidth}
                               strokeLinecap="round"
                               strokeLinejoin="round"
                               strokeOpacity={strokeOpacityMV}
@@ -270,7 +303,7 @@ addPropertyControls(PathReveal, {
         title: "Beam Width",
         min: 0,
         max: 10,
-        step: 0.1,
+        step: 2,
     },
     opacity: {
         type: ControlType.Object,
@@ -324,3 +357,5 @@ addPropertyControls(PathReveal, {
         step: 0.1,
     },
 })
+
+PathReveal.displayName = "Path Reveal"

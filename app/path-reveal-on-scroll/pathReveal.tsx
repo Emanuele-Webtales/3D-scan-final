@@ -12,13 +12,19 @@ import {
     RenderTarget,
 } from "framer"
 
-// Function to extract all paths from SVG content
+// Function to extract all paths from SVG content and combine them
 const extractPathsFromSVG = (svgContent: string): string[] => {
     const parser = new DOMParser()
     const svgDoc = parser.parseFromString(svgContent, "image/svg+xml")
     const paths = Array.from(svgDoc.querySelectorAll("path"))
         .map((p) => p.getAttribute("d"))
         .filter((d): d is string => !!d)
+    
+    // Combine all paths into a single path string
+    if (paths.length > 1) {
+        const combinedPath = paths.join(" ")
+        return [combinedPath]
+    }
     return paths
 }
 
@@ -113,25 +119,13 @@ export default function PathReveal(props:any) {
 
     // Map drawProgress -> overall pathLength within [rangeStart, rangeEnd]
     const mappedPathLength = useTransform<number, number>(drawProgress, (v: number) => {
-        // Compute base mapping inside [rangeStart, rangeEnd]
-        const base = rangeStart + (rangeEnd - rangeStart) * v
-        // Slightly overshoot at the very end to avoid a tiny gap on closed paths
-        // when using stroke dashes for reveal (common with rounded line caps).
-        const EPSILON = 0.03
-        if (v >= 1 && rangeEnd >= 1) return 1 + EPSILON
-        return base
+        // Simple linear mapping 0..1
+        return rangeStart + (rangeEnd - rangeStart) * v
     })
-    const strokeOpacityMVBase = useTransform<number, number>(drawProgress, (v: number) =>
+    // Simple, clean animation without epsilon complications
+    const visiblePathLength = mappedPathLength
+    const strokeOpacityMV = useTransform<number, number>(drawProgress, (v: number) =>
         opacityStart + (opacityEnd - opacityStart) * v
-    )
-    // Hide initial sliver when near zero length
-    const strokeOpacityMV = useTransform(
-        [mappedPathLength, strokeOpacityMVBase],
-        (values) => {
-            const len = values[0] as number
-            const o = values[1] as number
-            return len <= 0.005 ? 0 : o
-        }
     )
 
     const [svgPaths, setSvgPaths] = React.useState<string[]>([])
@@ -255,9 +249,8 @@ export default function PathReveal(props:any) {
                               strokeLinejoin="round"
                               strokeOpacity={strokeOpacityMV}
                               fill="none"
-                              // Normalize path units so 0..1 maps consistently across paths
                               pathLength={1}
-                              style={{ pathLength: mappedPathLength }}
+                              style={{ pathLength: visiblePathLength }}
                           />
                       ))}
             </g>

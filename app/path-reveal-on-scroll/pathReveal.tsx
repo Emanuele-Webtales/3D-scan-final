@@ -98,10 +98,16 @@ export default function PathReveal(props:any) {
         Math.min(1, progress?.end ?? 1)
     )
 
-    // Map drawProgress -> path length and opacity
-    const pathLengthMV = useTransform(drawProgress, (v) =>
-        rangeStart + (rangeEnd - rangeStart) * v
+    // Dash-based drawing for precise segment control
+    const segmentPortion = Math.max(0, rangeEnd - rangeStart)
+    const [totalLength, setTotalLength] = React.useState<number>(0)
+    const segmentPxMV = useTransform(drawProgress, (v) =>
+        segmentPortion * v * totalLength
     )
+    const dasharrayMV = useTransform(segmentPxMV, (px) =>
+        `${Math.min(totalLength, Math.max(0, px))} ${Math.max(1, totalLength)}`
+    )
+    const dashoffsetMV = useTransform(drawProgress, () => rangeStart * totalLength)
     const strokeOpacityMV = useTransform(drawProgress, (v) =>
         opacityStart + (opacityEnd - opacityStart) * v
     )
@@ -152,6 +158,12 @@ export default function PathReveal(props:any) {
                     // Fallback to a sane default
                     setViewBox("0 0 100 100")
                 }
+                try {
+                    const len = pathRef.current.getTotalLength()
+                    if (isFinite(len) && len > 0) setTotalLength(len)
+                } catch (e) {
+                    // ignore getTotalLength errors for invalid paths
+                }
             }
         })
         return () => cancelAnimationFrame(id)
@@ -171,9 +183,11 @@ export default function PathReveal(props:any) {
                 d={svgPath}
                 stroke={beamColor}
                 strokeWidth={beamWidth}
+                strokeLinecap="round"
+                strokeLinejoin="round"
                 strokeOpacity={strokeOpacityMV}
                 fill="none"
-                style={{ pathLength: pathLengthMV }}
+                style={{ strokeDasharray: dasharrayMV, strokeDashoffset: dashoffsetMV }}
             />
         </svg>
     )

@@ -112,11 +112,16 @@ export default function PathReveal(props:any) {
     )
 
     // Map drawProgress -> overall pathLength within [rangeStart, rangeEnd]
-    const mappedPathLength = useTransform(drawProgress, (v) => {
-        const len = rangeStart + (rangeEnd - rangeStart) * v
-        return len
+    const mappedPathLength = useTransform<number, number>(drawProgress, (v: number) => {
+        // Compute base mapping inside [rangeStart, rangeEnd]
+        const base = rangeStart + (rangeEnd - rangeStart) * v
+        // Slightly overshoot at the very end to avoid a tiny gap on closed paths
+        // when using stroke dashes for reveal (common with rounded line caps).
+        const EPSILON = 0.03
+        if (v >= 1 && rangeEnd >= 1) return 1 + EPSILON
+        return base
     })
-    const strokeOpacityMVBase = useTransform(drawProgress, (v) =>
+    const strokeOpacityMVBase = useTransform<number, number>(drawProgress, (v: number) =>
         opacityStart + (opacityEnd - opacityStart) * v
     )
     // Hide initial sliver when near zero length
@@ -172,7 +177,11 @@ export default function PathReveal(props:any) {
             if (groupRef.current) {
                 const bbox = groupRef.current.getBBox()
                 if (bbox && bbox.width > 0 && bbox.height > 0) {
-                    setViewBox(`${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`)
+                    // Expand viewBox with padding so rounded caps are not clipped
+                    const pad = Math.max(1, Math.max(bbox.width, bbox.height) * 0.02)
+                    setViewBox(
+                        `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`
+                    )
                 } else {
                     // Fallback to a sane default
                     setViewBox("0 0 100 100")
@@ -246,6 +255,8 @@ export default function PathReveal(props:any) {
                               strokeLinejoin="round"
                               strokeOpacity={strokeOpacityMV}
                               fill="none"
+                              // Normalize path units so 0..1 maps consistently across paths
+                              pathLength={1}
                               style={{ pathLength: mappedPathLength }}
                           />
                       ))}
@@ -301,9 +312,9 @@ addPropertyControls(PathReveal, {
     beamWidth: {
         type: ControlType.Number,
         title: "Beam Width",
-        min: 0,
-        max: 10,
-        step: 2,
+        min: 1,
+        max: 50,
+        step: 1,
     },
     opacity: {
         type: ControlType.Object,
@@ -358,4 +369,4 @@ addPropertyControls(PathReveal, {
     },
 })
 
-PathReveal.displayName = "Path Reveal"
+PathReveal.displayName = "Scroll Path Reveal"

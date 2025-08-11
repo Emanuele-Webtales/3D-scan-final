@@ -9,15 +9,24 @@ import {
     addPropertyControls,
     ControlType,
     FileControlDescription,
+    RenderTarget,
 } from "framer"
 
-// Function to extract path from SVG content
-const extractPathFromSVG = (svgContent: string): string => {
+// Function to extract all paths from SVG content
+const extractPathsFromSVG = (svgContent: string): string[] => {
     const parser = new DOMParser()
     const svgDoc = parser.parseFromString(svgContent, "image/svg+xml")
-    const path = svgDoc.querySelector("path")
-    return path ? path.getAttribute("d") || "" : ""
+    const paths = Array.from(svgDoc.querySelectorAll("path"))
+        .map((p) => p.getAttribute("d"))
+        .filter((d): d is string => !!d)
+    return paths
 }
+
+// Fallback SVG (used when no SVG is provided)
+const FALLBACK_SVG = `
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+<path d="M12 7.2294C10.2671 3.30561 6.23596 2.95683 4.35874 4.66804C2.83049 6.04137 2.09645 9.33298 3.49233 12.363C5.89902 17.573 12 20.3087 12 20.3087C12 20.3087 18.101 17.573 20.5076 12.363C21.9036 9.33298 21.1695 6.04137 19.6413 4.66804C17.764 2.95683 13.7328 3.30561 12 7.2294Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`
 
 /**
  * @framerIntrinsicWidth 400
@@ -43,12 +52,13 @@ export default function PathReveal(props:any) {
     const { scrollY } = useViewportScroll()
     const drawProgress = useMotionValue(0)
     const triggerYRef = React.useRef<number | null>(null)
+    const groupRef = React.useRef<SVGGElement>(null)
 
     // Start when the path reaches the chosen viewport anchor; then complete over computed distance
     React.useEffect(() => {
         const unsubscribe = scrollY.onChange((y) => {
-            if (!pathRef.current) return
-            const rect = pathRef.current.getBoundingClientRect()
+            if (!groupRef.current) return
+            const rect = groupRef.current.getBoundingClientRect()
             const vh = window.innerHeight
             const anchorY =
                 startPosition === "top"
@@ -100,44 +110,49 @@ export default function PathReveal(props:any) {
         Math.min(1, progress?.end ?? 1)
     )
 
-    // Dash-based drawing for precise segment control (used for partial segments)
-    const segmentPortion = Math.max(0, rangeEnd - rangeStart)
-    const [totalLength, setTotalLength] = React.useState<number>(0)
-    const dasharrayMV = useTransform(drawProgress, (v) => {
-        const draw = Math.max(0, segmentPortion * v * totalLength)
-        const gapBefore = Math.max(0, rangeStart * totalLength)
-        const gapAfter = Math.max(0, totalLength - gapBefore - draw)
-        return `${gapBefore} ${draw} ${gapAfter}`
+    // Map drawProgress -> overall pathLength within [rangeStart, rangeEnd]
+    const mappedPathLength = useTransform(drawProgress, (v) => {
+        const len = rangeStart + (rangeEnd - rangeStart) * v
+        return len
     })
-    const dashoffsetMV = 0
-    const strokeOpacityMV = useTransform(drawProgress, (v) =>
+    const strokeOpacityMVBase = useTransform(drawProgress, (v) =>
         opacityStart + (opacityEnd - opacityStart) * v
     )
+    // Hide initial sliver when near zero length
+    const strokeOpacityMV = useTransform(
+        [mappedPathLength, strokeOpacityMVBase],
+        (values) => {
+            const len = values[0] as number
+            const o = values[1] as number
+            return len <= 0.005 ? 0 : o
+        }
+    )
 
-    const [svgPath, setSvgPath] = React.useState<string>("")
+    const [svgPaths, setSvgPaths] = React.useState<string[]>([])
     const svgRef = React.useRef<SVGSVGElement>(null)
-    const pathRef = React.useRef<SVGPathElement>(null)
     const [viewBox, setViewBox] = React.useState<string | undefined>(undefined)
 
     React.useEffect(() => {
         let cancelled = false
-        const setPath = (pathStr: string) => {
-            if (!cancelled) setSvgPath(pathStr)
+        const setPaths = (paths: string[]) => {
+            if (!cancelled) setSvgPaths(paths)
         }
 
         if (inputType === "file" && svgFile) {
             fetch(svgFile)
                 .then((response) => response.text())
                 .then((svgContent) => {
-                    const path = extractPathFromSVG(svgContent)
-                    setPath(path)
+                    const paths = extractPathsFromSVG(svgContent)
+                    setPaths(paths)
                 })
-                .catch(() => setPath(""))
+                .catch(() => setPaths([]))
         } else if (inputType === "code" && svgCode) {
-            const path = extractPathFromSVG(svgCode)
-            setPath(path)
+            const paths = extractPathsFromSVG(svgCode)
+            setPaths(paths)
         } else {
-            setPath("")
+            // Use fallback svg when nothing is provided
+            const paths = extractPathsFromSVG(FALLBACK_SVG)
+            setPaths(paths)
         }
 
         return () => {
@@ -147,29 +162,23 @@ export default function PathReveal(props:any) {
 
     // Both path drawing and opacity are tied to the same drawProgress
 
-    // Compute a proper viewBox from the actual path geometry once it's rendered
+    // Compute a proper viewBox from the actual paths geometry once they're rendered
     React.useLayoutEffect(() => {
-        if (!svgPath) return
+        if (!svgPaths || svgPaths.length === 0) return
         // Wait one frame to ensure the path is in the DOM
         const id = requestAnimationFrame(() => {
-            if (pathRef.current) {
-                const bbox = pathRef.current.getBBox()
+            if (groupRef.current) {
+                const bbox = groupRef.current.getBBox()
                 if (bbox && bbox.width > 0 && bbox.height > 0) {
                     setViewBox(`${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`)
                 } else {
                     // Fallback to a sane default
                     setViewBox("0 0 100 100")
                 }
-                try {
-                    const len = pathRef.current.getTotalLength()
-                    if (isFinite(len) && len > 0) setTotalLength(len)
-                } catch (e) {
-                    // ignore getTotalLength errors for invalid paths
-                }
             }
         })
         return () => cancelAnimationFrame(id)
-    }, [svgPath])
+    }, [svgPaths])
 
     return (
         <svg
@@ -180,31 +189,34 @@ export default function PathReveal(props:any) {
             preserveAspectRatio="xMidYMid meet"
             overflow="visible"
         >
-            {rangeStart === 0 && rangeEnd === 1 ? (
-                <motion.path
-                    ref={pathRef}
-                    d={svgPath}
-                    stroke={beamColor}
-                    strokeWidth={beamWidth}
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeOpacity={strokeOpacityMV}
-                    fill="none"
-                    style={{ pathLength: drawProgress }}
-                />
-            ) : (
-                <motion.path
-                ref={pathRef}
-                d={svgPath}
-                stroke={beamColor}
-                strokeWidth={beamWidth}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeOpacity={strokeOpacityMV}
-                fill="none"
-                style={{ strokeDasharray: dasharrayMV, strokeDashoffset: dashoffsetMV }}
-                />
-            )}
+            <g ref={groupRef}>
+                {RenderTarget.hasRestrictions()
+                    ? svgPaths.map((d, i) => (
+                          <motion.path
+                              key={i}
+                              d={d}
+                              stroke={beamColor}
+                              strokeWidth={beamWidth}
+                              strokeLinecap="butt"
+                              strokeLinejoin="round"
+                              strokeOpacity={1}
+                              fill="none"
+                          />
+                      ))
+                    : svgPaths.map((d, i) => (
+                          <motion.path
+                              key={i}
+                              d={d}
+                              stroke={beamColor}
+                              strokeWidth={beamWidth}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeOpacity={strokeOpacityMV}
+                              fill="none"
+                              style={{ pathLength: mappedPathLength }}
+                          />
+                      ))}
+            </g>
         </svg>
     )
 }

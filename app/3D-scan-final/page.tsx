@@ -439,7 +439,9 @@ const Scene = ({
     const [rawMap, depthMapTexture] = useTexture(
         [textureMapUrl, depthMapUrl],
         () => {
-            setIsLoading(false)
+            // Textures are loaded, but we will only mark loading=false
+            // after we can read actual dimensions to avoid a one-frame
+            // aspect ratio distortion. Still apply colorSpace immediately.
             if (rawMap) {
                 rawMap.colorSpace = SRGBColorSpace
             }
@@ -451,6 +453,28 @@ const Scene = ({
     // hasTextureMapProp already computed above
     const aspectSourceTexture = hasTextureMapProp ? rawMap : depthMapTexture
     const imageAspectRatio = useImageAspectRatio(aspectSourceTexture)
+
+    // Consider textures/aspect "ready" only when we can read real dimensions
+    const isAspectReady = useMemo(() => {
+        const tex: any = aspectSourceTexture
+        const source: any = tex && (tex.image || tex.source?.data)
+        if (!source) return false
+        const width = source.videoWidth || source.naturalWidth || source.width
+        const height = source.videoHeight || source.naturalHeight || source.height
+        return Boolean(width && height)
+    }, [aspectSourceTexture])
+
+    // Reset loading whenever the texture inputs change
+    useEffect(() => {
+        setIsLoading(true)
+    }, [textureMapUrl, depthMapUrl, setIsLoading])
+
+    // Flip loading off only after aspect is measurable
+    useEffect(() => {
+        if (isAspectReady) {
+            setIsLoading(false)
+        }
+    }, [isAspectReady, setIsLoading])
 
     // Memoized color conversion - only recalculates when dotColor changes
     const rgbColor = useMemo(() => {
@@ -1299,28 +1323,25 @@ export default function Home(props: {
             <div style={{ height: "100%", width: "100%", position: "relative" }}>
                 {/* Invisible sizing element - provides intrinsic dimensions for Fit sizing (prevents 40px/0px collapse) */}
                 <div
-                    style={{
-                        width: `${INTRINSIC_WIDTH}px`,
-                        height: `${INTRINSIC_HEIGHT}px`,
-                        minWidth: `${INTRINSIC_WIDTH}px`,
-                        minHeight: `${INTRINSIC_HEIGHT}px`,
-                        visibility: "hidden",
-                    }}
-                    aria-hidden="true"
-                />
-
-                {/* Overlay the message so the spacer does not push it */}
-                <div
-                    style={{
-                        position: "absolute",
-                        inset: 0,
-                        display: "flex",
-                        justifyContent: "center",
-                        alignItems: "center",
-                    }}
+                    style={{ height: "100%", width: "100%", position: "relative", display: "flex", justifyContent: "center", alignItems: "center"}}
                 >
+                    {/* Intrinsic sizing spacer moved here so it doesn't affect outer layout */}
+                    <div
+                        style={{
+                            width: `${INTRINSIC_WIDTH}px`,
+                            height: `${INTRINSIC_HEIGHT}px`,
+                            minWidth: `${INTRINSIC_WIDTH}px`,
+                            minHeight: `${INTRINSIC_HEIGHT}px`,
+                            visibility: "hidden",
+                            position: "absolute",
+                            inset: 0,
+                            zIndex: -1,
+                            pointerEvents: "none",
+                        }}
+                        aria-hidden="true"
+                    />
                     <ComponentMessage
-                        style={{ position: "relative", width: "100%", height: "100%", display: "flex", justifyContent: "center", alignItems: "center" }}
+                        style={{ position: "relative", width: "100%", height: "100%", minWidth:0, minHeight:0}}
                         title="3D Scan Effect"
                         description="Add an Image and Depth map to create stunning 3D scanning effects"
                     />

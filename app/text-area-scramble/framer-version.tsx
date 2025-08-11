@@ -35,7 +35,9 @@ const DEFAULT_SCRAMBLE_CHARS =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=[]{}|;:,.<>?"
 
 /**
- * @framerSupportedLayoutWidth any
+ * @framerIntrinsicWidth 400
+ * @framerIntrinsicWidth auto
+ * @framerSupportedLayoutWidth fixed
  * @framerSupportedLayoutHeight auto
  * @framerDisableUnlink
  */
@@ -69,7 +71,9 @@ export default function ScrambledText(props: ScrambleTextProps) {
     useGSAP(() => {
         if (!rootRef.current) return
 
-        const paragraph = rootRef.current.querySelector("p")
+        const paragraph = rootRef.current.querySelector(
+            '[data-scramble-element]'
+        ) as HTMLElement | null
         if (!paragraph) return
 
         // First split by words to maintain proper text wrapping
@@ -100,9 +104,7 @@ export default function ScrambledText(props: ScrambleTextProps) {
         // Function to generate a random scrambled character
         const getRandomChar = () => {
             const charsToUse = scrambleChars || DEFAULT_SCRAMBLE_CHARS
-            return charsToUse[
-                Math.floor(Math.random() * charsToUse.length)
-            ]
+            return charsToUse[Math.floor(Math.random() * charsToUse.length)]
         }
 
         // Function to check if mouse is within radius of any character
@@ -254,7 +256,7 @@ export default function ScrambledText(props: ScrambleTextProps) {
             }
             currentScrambledStates.current.clear()
         }
-    }, [radius, interval, percentage, scrambleChars, color, scrambleColor])
+    }, [radius, interval, percentage, scrambleChars, color, scrambleColor, text, tag])
 
     return (
         <div
@@ -262,7 +264,11 @@ export default function ScrambledText(props: ScrambleTextProps) {
             className={`text-block ${className}`}
             style={{ ...font, ...style }}
         >
-            {React.createElement(TAG, { style: { margin: 0 } }, text)}
+            {React.createElement(
+                TAG,
+                { style: { margin: 0, color }, "data-scramble-element": true },
+                text
+            )}
 
             {/* Visual indicator circle around cursor - only show when mouse is over text */}
             {isMouseOverText && (
@@ -273,7 +279,7 @@ export default function ScrambledText(props: ScrambleTextProps) {
                         top: mousePos.y - radius,
                         width: radius * 2,
                         height: radius * 2,
-                        border: "1px solid rgba(136, 85, 255, 0.3)",
+                        //border: "1px solid rgba(136, 85, 255, 0.3)",
                         borderRadius: "50%",
                         pointerEvents: "none",
                         zIndex: 9999,
@@ -354,6 +360,5 @@ addPropertyControls(ScrambledText, {
             "More components at [Framer University](https://frameruni.link/cc).",
     },
 })
-
 
 ScrambledText.displayName = "Scramble on hover"

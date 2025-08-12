@@ -141,10 +141,11 @@ export default function PathReveal(props: any) {
     const rangeEnd: number = Math.max(0, Math.min(1, progress?.end ?? 1))
 
     // Map drawProgress -> overall pathLength within [rangeStart, rangeEnd]
+    // Handle both forward (start < end) and reverse (start > end) animations
     const mappedPathLength = useTransform<number, number>(
         drawProgress,
         (v: number) => {
-            // Simple linear mapping 0..1
+            // Linear mapping that works for both forward and reverse animations
             return rangeStart + (rangeEnd - rangeStart) * v
         }
     )
@@ -157,22 +158,43 @@ export default function PathReveal(props: any) {
     const visiblePathLength = mappedPathLength
     
     // Create opacity animation that syncs with the longest path timing
+    // Handle both forward and reverse animations
     const strokeOpacityMV = useTransform<number, number>(
         visiblePathLength,
         (v: number) => {
-            if (v <= 0) return 0 // Always invisible when progress is 0
+            // Determine if this is a reverse animation (start > end)
+            const isReverse = rangeStart > rangeEnd
+            
+            // Calculate the progress within the animation range
+            let animationProgress: number
+            if (isReverse) {
+                // For reverse animations, calculate progress from the reverse perspective
+                animationProgress = (rangeStart - v) / (rangeStart - rangeEnd)
+            } else {
+                // For forward animations, calculate progress normally
+                animationProgress = (v - rangeStart) / (rangeEnd - rangeStart)
+            }
+            
+            // Clamp progress to 0-1 range
+            animationProgress = Math.max(0, Math.min(1, animationProgress))
+            
+            // Handle edge cases
+            if (rangeStart === rangeEnd) {
+                // If start equals end, use the end opacity
+                return opacityEnd
+            }
             
             // For multi-path SVGs, calculate when opacity should complete based on longest path
             if (longestPathLength > 0 && combinedPathLength > 0) {
                 // Calculate what portion of the combined path equals the longest individual path
                 const longestPathRatio = longestPathLength / combinedPathLength
                 // Opacity should complete when we've drawn the equivalent of the longest path
-                const opacityProgress = Math.min(1, v / longestPathRatio)
+                const opacityProgress = Math.min(1, animationProgress / longestPathRatio)
                 return opacityStart + (opacityEnd - opacityStart) * opacityProgress
             }
             
             // Fallback for single paths or when length calculation fails
-            return opacityStart + (opacityEnd - opacityStart) * v
+            return opacityStart + (opacityEnd - opacityStart) * animationProgress
         }
     )
     

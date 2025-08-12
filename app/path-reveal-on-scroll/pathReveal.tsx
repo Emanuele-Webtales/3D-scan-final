@@ -13,19 +13,40 @@ import {
 } from "framer"
 
 // Function to extract all paths from SVG content and combine them
-const extractPathsFromSVG = (svgContent: string): string[] => {
+const extractPathsFromSVG = (svgContent: string): { paths: string[]; longestPathLength: number } => {
     const parser = new DOMParser()
     const svgDoc = parser.parseFromString(svgContent, "image/svg+xml")
-    const paths = Array.from(svgDoc.querySelectorAll("path"))
+    const pathElements = Array.from(svgDoc.querySelectorAll("path"))
+    const paths = pathElements
         .map((p) => p.getAttribute("d"))
         .filter((d): d is string => !!d)
 
-    // Combine all paths into a single path string
+    // Calculate the longest path length before combining
+    let longestPathLength = 0
+    if (pathElements.length > 0) {
+        // Create temporary SVG to calculate path lengths
+        const tempSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+        tempSvg.style.position = "absolute"
+        tempSvg.style.visibility = "hidden"
+        document.body.appendChild(tempSvg)
+        
+        pathElements.forEach((pathEl) => {
+            const tempPath = document.createElementNS("http://www.w3.org/2000/svg", "path")
+            tempPath.setAttribute("d", pathEl.getAttribute("d") || "")
+            tempSvg.appendChild(tempPath)
+            const length = tempPath.getTotalLength()
+            longestPathLength = Math.max(longestPathLength, length)
+        })
+        
+        document.body.removeChild(tempSvg)
+    }
+
+    // Combine all paths into a single path string for progress calculation
     if (paths.length > 1) {
         const combinedPath = paths.join(" ")
-        return [combinedPath]
+        return { paths: [combinedPath], longestPathLength }
     }
-    return paths
+    return { paths, longestPathLength }
 }
 
 // Fallback SVG (used when no SVG is provided)
@@ -97,7 +118,7 @@ export default function PathReveal(props: any) {
             // Speed=1 should be slow (large distance), Speed=10 should be fast (small distance)
             const distance = Math.max(
                 1,
-                Math.round(window.innerHeight / (speedFactor * 0.5))
+                Math.round(window.innerHeight / (speedFactor * 0.2))
             )
             const progressed = (y - (triggerYRef.current as number)) / distance
             const clamped = Math.max(0, Math.min(1, progressed))
@@ -127,14 +148,48 @@ export default function PathReveal(props: any) {
             return rangeStart + (rangeEnd - rangeStart) * v
         }
     )
+    // State declarations
+    const [svgPaths, setSvgPaths] = React.useState<string[]>([])
+    const [longestPathLength, setLongestPathLength] = React.useState<number>(0)
+    const [combinedPathLength, setCombinedPathLength] = React.useState<number>(0)
+
     // Simple, clean animation without epsilon complications
     const visiblePathLength = mappedPathLength
+    
+    // Create opacity animation that syncs with the longest path timing
     const strokeOpacityMV = useTransform<number, number>(
-        drawProgress,
-        (v: number) => v === 0 ? 0 : opacityStart + (opacityEnd - opacityStart) * v
+        visiblePathLength,
+        (v: number) => {
+            if (v <= 0) return 0 // Always invisible when progress is 0
+            
+            // For multi-path SVGs, calculate when opacity should complete based on longest path
+            if (longestPathLength > 0 && combinedPathLength > 0) {
+                // Calculate what portion of the combined path equals the longest individual path
+                const longestPathRatio = longestPathLength / combinedPathLength
+                // Opacity should complete when we've drawn the equivalent of the longest path
+                const opacityProgress = Math.min(1, v / longestPathRatio)
+                return opacityStart + (opacityEnd - opacityStart) * opacityProgress
+            }
+            
+            // Fallback for single paths or when length calculation fails
+            return opacityStart + (opacityEnd - opacityStart) * v
+        }
     )
-
-    const [svgPaths, setSvgPaths] = React.useState<string[]>([])
+    
+    // Calculate combined path length once paths are rendered
+    React.useLayoutEffect(() => {
+        if (!svgPaths || svgPaths.length === 0 || !groupRef.current) return
+        
+        const id = requestAnimationFrame(() => {
+            const pathElement = groupRef.current?.querySelector('path')
+            if (pathElement) {
+                const totalLength = pathElement.getTotalLength()
+                setCombinedPathLength(totalLength)
+            }
+        })
+        
+        return () => cancelAnimationFrame(id)
+    }, [svgPaths])
     const svgRef = React.useRef<SVGSVGElement>(null)
     const [viewBox, setViewBox] = React.useState<string | undefined>(undefined)
     const [computedStrokeWidth, setComputedStrokeWidth] =
@@ -142,25 +197,28 @@ export default function PathReveal(props: any) {
 
     React.useEffect(() => {
         let cancelled = false
-        const setPaths = (paths: string[]) => {
-            if (!cancelled) setSvgPaths(paths)
+        const setPathsAndLength = (paths: string[], length: number) => {
+            if (!cancelled) {
+                setSvgPaths(paths)
+                setLongestPathLength(length)
+            }
         }
 
         if (inputType === "file" && svgFile) {
             fetch(svgFile)
                 .then((response) => response.text())
                 .then((svgContent) => {
-                    const paths = extractPathsFromSVG(svgContent)
-                    setPaths(paths)
+                    const result = extractPathsFromSVG(svgContent)
+                    setPathsAndLength(result.paths, result.longestPathLength)
                 })
-                .catch(() => setPaths([]))
+                .catch(() => setPathsAndLength([], 0))
         } else if (inputType === "code" && svgCode) {
-            const paths = extractPathsFromSVG(svgCode)
-            setPaths(paths)
+            const result = extractPathsFromSVG(svgCode)
+            setPathsAndLength(result.paths, result.longestPathLength)
         } else {
             // Use fallback svg when nothing is provided
-            const paths = extractPathsFromSVG(FALLBACK_SVG)
-            setPaths(paths)
+            const result = extractPathsFromSVG(FALLBACK_SVG)
+            setPathsAndLength(result.paths, result.longestPathLength)
         }
 
         return () => {
@@ -366,7 +424,7 @@ addPropertyControls(PathReveal, {
     speed: {
         type: ControlType.Number,
         title: "Speed",
-        min: 0.1,
+        min: 1,
         max: 10,
         step: 0.1,
     },

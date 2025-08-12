@@ -19,7 +19,7 @@ const extractPathsFromSVG = (svgContent: string): string[] => {
     const paths = Array.from(svgDoc.querySelectorAll("path"))
         .map((p) => p.getAttribute("d"))
         .filter((d): d is string => !!d)
-    
+
     // Combine all paths into a single path string
     if (paths.length > 1) {
         const combinedPath = paths.join(" ")
@@ -43,7 +43,7 @@ const FALLBACK_SVG = `
  * @framerSupportedLayoutHeight any
  */
 
-export default function PathReveal(props:any) {
+export default function PathReveal(props: any) {
     const {
         svgFile,
         svgCode,
@@ -71,11 +71,15 @@ export default function PathReveal(props:any) {
                 startPosition === "top"
                     ? rect.top
                     : startPosition === "center"
-                    ? rect.top + rect.height / 2
-                    : rect.bottom
+                      ? rect.top + rect.height / 2
+                      : rect.bottom
             // We want to trigger only when the chosen anchor crosses upward past the line
             const thresholdY =
-                startPosition === "top" ? 0 : startPosition === "center" ? vh / 2 : vh
+                startPosition === "top"
+                    ? 0
+                    : startPosition === "center"
+                      ? vh / 2
+                      : vh
 
             // Reset trigger if element is above the threshold (before start)
             if (anchorY > thresholdY) {
@@ -90,7 +94,11 @@ export default function PathReveal(props:any) {
             }
 
             const speedFactor = Number(speed ?? scrollSpeed ?? 1) || 1
-            const distance = Math.max(1, Math.round(window.innerHeight / speedFactor))
+            // Speed=1 should be slow (large distance), Speed=10 should be fast (small distance)
+            const distance = Math.max(
+                1,
+                Math.round(window.innerHeight / (speedFactor * 0.5))
+            )
             const progressed = (y - (triggerYRef.current as number)) / distance
             const clamped = Math.max(0, Math.min(1, progressed))
             drawProgress.set(clamped)
@@ -108,30 +116,29 @@ export default function PathReveal(props:any) {
         (opacity && typeof opacity.end === "number" ? opacity.end : 1) || 1
 
     // Resolve path range [start, end] from progress object
-    const rangeStart: number = Math.max(
-        0,
-        Math.min(1, progress?.start ?? 0)
-    )
-    const rangeEnd: number = Math.max(
-        0,
-        Math.min(1, progress?.end ?? 1)
-    )
+    const rangeStart: number = Math.max(0, Math.min(1, progress?.start ?? 0))
+    const rangeEnd: number = Math.max(0, Math.min(1, progress?.end ?? 1))
 
     // Map drawProgress -> overall pathLength within [rangeStart, rangeEnd]
-    const mappedPathLength = useTransform<number, number>(drawProgress, (v: number) => {
-        // Simple linear mapping 0..1
-        return rangeStart + (rangeEnd - rangeStart) * v
-    })
+    const mappedPathLength = useTransform<number, number>(
+        drawProgress,
+        (v: number) => {
+            // Simple linear mapping 0..1
+            return rangeStart + (rangeEnd - rangeStart) * v
+        }
+    )
     // Simple, clean animation without epsilon complications
     const visiblePathLength = mappedPathLength
-    const strokeOpacityMV = useTransform<number, number>(drawProgress, (v: number) =>
-        opacityStart + (opacityEnd - opacityStart) * v
+    const strokeOpacityMV = useTransform<number, number>(
+        drawProgress,
+        (v: number) => v === 0 ? 0 : opacityStart + (opacityEnd - opacityStart) * v
     )
 
     const [svgPaths, setSvgPaths] = React.useState<string[]>([])
     const svgRef = React.useRef<SVGSVGElement>(null)
     const [viewBox, setViewBox] = React.useState<string | undefined>(undefined)
-    const [computedStrokeWidth, setComputedStrokeWidth] = React.useState<number>(beamWidth)
+    const [computedStrokeWidth, setComputedStrokeWidth] =
+        React.useState<number>(beamWidth)
 
     React.useEffect(() => {
         let cancelled = false
@@ -172,7 +179,10 @@ export default function PathReveal(props:any) {
                 const bbox = groupRef.current.getBBox()
                 if (bbox && bbox.width > 0 && bbox.height > 0) {
                     // Pad by half the stroke width
-                    const pad = Math.max(0, (computedStrokeWidth || beamWidth) / 2)
+                    const pad = Math.max(
+                        0,
+                        (computedStrokeWidth || beamWidth) / 2
+                    )
                     setViewBox(
                         `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`
                     )

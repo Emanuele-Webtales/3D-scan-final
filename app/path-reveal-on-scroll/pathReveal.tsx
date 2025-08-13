@@ -15,7 +15,13 @@ import {
 // Function to extract all paths from SVG content and measure their lengths precisely
 const extractPathsFromSVG = (
     svgContent: string
-): { paths: string[]; lengths: number[]; longestPathLength: number } => {
+): {
+    paths: string[]
+    lengths: number[]
+    longestPathLength: number
+    maxPathWidth: number
+    maxPathHeight: number
+} => {
     const parser = new DOMParser()
     const svgDoc = parser.parseFromString(svgContent, "image/svg+xml")
     const pathElements = Array.from(svgDoc.querySelectorAll("path"))
@@ -26,6 +32,8 @@ const extractPathsFromSVG = (
     // Measure each path length and determine the longest
     const lengths: number[] = []
     let longestPathLength = 0
+    let maxPathWidth = 0
+    let maxPathHeight = 0
     if (pathElements.length > 0) {
         const tempSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
         tempSvg.style.position = "absolute"
@@ -39,13 +47,16 @@ const extractPathsFromSVG = (
             const length = tempPath.getTotalLength()
             lengths.push(length)
             longestPathLength = Math.max(longestPathLength, length)
+            const bb = tempPath.getBBox()
+            maxPathWidth = Math.max(maxPathWidth, bb.width)
+            maxPathHeight = Math.max(maxPathHeight, bb.height)
         })
 
         document.body.removeChild(tempSvg)
     }
 
     // Keep paths separated; we'll animate each with its own length for precision
-    return { paths, lengths, longestPathLength }
+    return { paths, lengths, longestPathLength, maxPathWidth, maxPathHeight }
 }
 
 // Fallback SVG (used when no SVG is provided)
@@ -75,21 +86,13 @@ export default function PathReveal(props: any) {
         scrollSpeed,
         speed,
         startPosition,
-        debug,
     } = props
     const { scrollY } = useViewportScroll()
     const drawProgress = useMotionValue(0)
     const triggerYRef = React.useRef<number | null>(null)
     const groupRef = React.useRef<SVGGElement>(null)
 
-    // Debug states
-    const [debugDistanceScrolled, setDebugDistanceScrolled] =
-        React.useState<number>(0)
-    const [debugDrawProgress, setDebugDrawProgress] =
-        React.useState<number>(0)
-    const [debugPathProgress, setDebugPathProgress] =
-        React.useState<number>(0)
-    const [debugOpacity, setDebugOpacity] = React.useState<number>(0)
+    
 
     // Start when the path reaches the chosen viewport anchor; then complete over computed distance
     React.useEffect(() => {
@@ -134,26 +137,18 @@ export default function PathReveal(props: any) {
             const clamped = Math.max(0, Math.min(1, progressed))
             drawProgress.set(clamped)
 
-            if (debug) {
-                const dist =
-                    triggerYRef.current == null
-                        ? 0
-                        : Math.max(0, y - (triggerYRef.current as number))
-                setDebugDistanceScrolled(dist)
-                setDebugDrawProgress(clamped)
-            }
         })
 
         return () => {
             unsubscribe()
         }
-    }, [scrollY, startPosition, speed, scrollSpeed, debug])
+    }, [scrollY, startPosition, speed, scrollSpeed])
 
     // Resolve opacity start/end from object prop
     const opacityStart: number =
-        (opacity && typeof opacity.start === "number" ? opacity.start : 0) || 0
+        opacity && typeof opacity.start === "number" ? opacity.start : 0
     const opacityEnd: number =
-        (opacity && typeof opacity.end === "number" ? opacity.end : 1) || 1
+        opacity && typeof opacity.end === "number" ? opacity.end : 1
 
     // Resolve path range [start, end] from progress object
     const rangeStart: number = Math.max(0, Math.min(1, progress?.start ?? 0))
@@ -194,24 +189,15 @@ export default function PathReveal(props: any) {
         (p: number) => opacityStart + (opacityEnd - opacityStart) * p
     )
 
-    // Subscribe to path progress for debug
-    React.useEffect(() => {
-        if (!debug) return
-        const unsubPath = pathDrawProgress.onChange((v) => {
-            setDebugPathProgress(v)
-        })
-        const unsubOpacity = strokeOpacityMV.onChange((v) => setDebugOpacity(v))
-        return () => {
-            unsubPath && unsubPath()
-            unsubOpacity && unsubOpacity()
-        }
-    }, [debug, pathDrawProgress, strokeOpacityMV])
+    
 
     // No combined path length needed
     const svgRef = React.useRef<SVGSVGElement>(null)
     const [viewBox, setViewBox] = React.useState<string | undefined>(undefined)
     const [computedStrokeWidth, setComputedStrokeWidth] =
         React.useState<number>(beamWidth)
+    const [maxPathWidth, setMaxPathWidth] = React.useState<number>(0)
+    const [maxPathHeight, setMaxPathHeight] = React.useState<number>(0)
 
     React.useEffect(() => {
         let cancelled = false
@@ -265,27 +251,33 @@ export default function PathReveal(props: any) {
 
     // Compute a proper viewBox from the actual paths geometry once they're rendered
     React.useLayoutEffect(() => {
-        if (!svgPaths || svgPaths.length === 0) return
-        // Wait one frame to ensure the path is in the DOM
-        const id = requestAnimationFrame(() => {
-            if (groupRef.current) {
-                const bbox = groupRef.current.getBBox()
-                if (bbox && bbox.width > 0 && bbox.height > 0) {
-                    // Pad by half the stroke width
-                    const pad = Math.max(
-                        0,
-                        (computedStrokeWidth || beamWidth) / 2
-                    )
-                    setViewBox(
-                        `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`
-                    )
-                } else {
-                    // Fallback to a sane default
-                    setViewBox("0 0 100 100")
-                }
-            }
-        })
-        return () => cancelAnimationFrame(id)
+        if (!svgPaths || svgPaths.length === 0 || !groupRef.current) return
+        const bbox = groupRef.current.getBBox()
+        if (bbox && bbox.width > 0 && bbox.height > 0) {
+            const pad = Math.max(0, (computedStrokeWidth || beamWidth) / 2)
+            setViewBox(
+                `${bbox.x - pad} ${bbox.y - pad} ${bbox.width + pad * 2} ${bbox.height + pad * 2}`
+            )
+        } else {
+            setViewBox("0 0 100 100")
+        }
+    }, [svgPaths, computedStrokeWidth, beamWidth])
+
+    // Compute the widest and tallest individual path among all paths
+    React.useLayoutEffect(() => {
+        if (!svgPaths || svgPaths.length === 0 || !groupRef.current) return
+        const paths = Array.from(groupRef.current.querySelectorAll('path'))
+        if (paths.length === 0) return
+        let widest = 0
+        let tallest = 0
+        for (const p of paths) {
+            const bb = p.getBBox()
+            widest = Math.max(widest, bb.width)
+            tallest = Math.max(tallest, bb.height)
+        }
+        const pad = Math.max(0, (computedStrokeWidth || beamWidth) / 2)
+        setMaxPathWidth(Math.ceil(widest + pad * 2))
+        setMaxPathHeight(Math.ceil(tallest + pad * 2))
     }, [svgPaths, computedStrokeWidth, beamWidth])
 
     // Keep stroke width in screen pixels by adjusting based on SVG scale
@@ -306,7 +298,11 @@ export default function PathReveal(props: any) {
             const scaleX = rect.width / vbWidth
             const scaleY = rect.height / vbHeight
             const scale = Math.min(scaleX, scaleY) || 1
-            setComputedStrokeWidth(beamWidth / scale)
+            
+            // Scale the stroke width to maintain correct visual appearance when SVG is scaled
+            // This ensures the stroke looks the right thickness regardless of canvas size
+            const adjustedStrokeWidth = beamWidth / scale
+            setComputedStrokeWidth(adjustedStrokeWidth)
         }
 
         updateStroke()
@@ -320,7 +316,8 @@ export default function PathReveal(props: any) {
     }, [beamWidth, viewBox])
 
     return (
-        <div style={{ position: "relative", width: "100%", height: "100%" }}>
+        <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", minWidth: maxPathWidth || undefined, minHeight: maxPathHeight || undefined }}>
+        <div style={{ position: "absolute", inset:0}}>
             <svg
                 ref={svgRef}
                 width="100%"
@@ -330,64 +327,34 @@ export default function PathReveal(props: any) {
                 overflow="visible"
             >
                 <g ref={groupRef}>
-                    {RenderTarget.hasRestrictions()
-                        ? svgPaths.map((d, i) => (
-                              <motion.path
-                                  key={i}
-                                  d={d}
-                                  stroke={beamColor}
-                                  strokeWidth={computedStrokeWidth}
-                                  strokeLinecap="butt"
-                                  strokeLinejoin="round"
-                                  strokeOpacity={1}
-                                  fill="none"
-                              />
-                          ))
-                        : svgPaths.map((d, i) => {
-                              const len = pathLengths[i] ?? 0
-                              const dasharray = len > 0 ? `${len}` : "1"
-                              const dashoffset = len > 0 ? (1 - pathProgressValue) * len : 0
-                              return (
-                                  <motion.path
-                                      key={i}
-                                      d={d}
-                                      stroke={beamColor}
-                                      strokeWidth={computedStrokeWidth}
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                      strokeOpacity={strokeOpacityMV}
-                                      fill="none"
-                                      strokeDasharray={dasharray}
-                                      strokeDashoffset={dashoffset}
-                                  />
-                              )
-                          })}
+                    {svgPaths.map((d, i) => {
+                        const len = pathLengths[i] ?? 0
+                        const dasharray = len > 0 ? `${len}` : "1"
+                        const isCanvas = RenderTarget.hasRestrictions()
+                        const effectiveProgress = isCanvas ? 1 : pathProgressValue
+                        const dashoffset = len > 0 ? (1 - effectiveProgress) * len : 0
+                        const opacityValue = isCanvas
+                            ? 1
+                            : opacityStart + (opacityEnd - opacityStart) * effectiveProgress
+                        return (
+                            <motion.path
+                                key={i}
+                                d={d}
+                                stroke={beamColor}
+                                strokeWidth={computedStrokeWidth}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeOpacity={opacityValue as any}
+                                fill="none"
+                                strokeDasharray={dasharray}
+                                strokeDashoffset={dashoffset}
+                            />
+                        )
+                    })}
                 </g>
             </svg>
 
-            {debug && (
-                <div
-                    style={{
-                        position: "absolute",
-                        top: 8,
-                        left: 8,
-                        padding: "8px 10px",
-                        background: "rgba(0,0,0,0.6)",
-                        color: "#fff",
-                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                        fontSize: 12,
-                        lineHeight: 1.4,
-                        borderRadius: 6,
-                        backdropFilter: "saturate(1.2) blur(2px)",
-                        pointerEvents: "none",
-                    }}
-                >
-                    <div><strong>Distance</strong>: {debugDistanceScrolled.toFixed(1)}px</div>
-                    <div><strong>Draw Progress</strong>: {debugDrawProgress.toFixed(3)}</div>
-                    <div><strong>Path Progress</strong>: {debugPathProgress.toFixed(3)}</div>
-                    <div><strong>Opacity</strong>: {debugOpacity.toFixed(3)}</div>
-                </div>
-            )}
+        </div>
         </div>
     )
 }
@@ -404,7 +371,6 @@ PathReveal.defaultProps = {
     speed: 1000,
     scrollSpeed: 0,
     startPosition: "center",
-    debug: false,
 }
 
 addPropertyControls(PathReveal, {
@@ -495,13 +461,6 @@ addPropertyControls(PathReveal, {
         max: undefined,
         step: 50,
         defaultValue: 1000,
-    },
-    debug: {
-        type: ControlType.Boolean,
-        title: "Debug Panel",
-        defaultValue: false,
-        enabledTitle: "On",
-        disabledTitle: "Off",
     },
 })
 

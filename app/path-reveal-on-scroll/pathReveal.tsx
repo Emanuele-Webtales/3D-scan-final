@@ -114,6 +114,8 @@ export default function PathReveal(props: any) {
             // Reset trigger if element is above the threshold (before start)
             if (anchorY > thresholdY) {
                 triggerYRef.current = null
+                // Before start, clamp to the configured start of the window,
+                // so visuals reflect the initial state rather than zero.
                 drawProgress.set(0)
                 return
             }
@@ -121,6 +123,8 @@ export default function PathReveal(props: any) {
             // Lock trigger only when the anchor is at or above the threshold (crossed)
             if (triggerYRef.current == null && anchorY <= thresholdY) {
                 triggerYRef.current = y
+                // Immediately snap visuals to the window start at trigger time
+                drawProgress.set(0)
             }
 
             // Use pixel-based scroll height (default 1000px if not specified)
@@ -170,32 +174,33 @@ export default function PathReveal(props: any) {
     const [longestPathLength, setLongestPathLength] = React.useState<number>(0)
 
     // Keep a numeric snapshot of the mapped progress for per-path math
-    const [pathProgressValue, setPathProgressValue] = React.useState<number>(0)
+    const [pathProgressValue, setPathProgressValue] = React.useState<number>(() => {
+        const initial = (pathDrawProgress as any)?.get?.()
+        return typeof initial === "number" ? initial : rangeStart
+    })
     React.useEffect(() => {
+        // Sync immediately when the range changes
+        const current = (pathDrawProgress as any)?.get?.()
+        if (typeof current === "number") setPathProgressValue(current)
         const unsub = pathDrawProgress.onChange((v) => setPathProgressValue(v))
         return () => unsub && unsub()
-    }, [pathDrawProgress])
+    }, [pathDrawProgress, rangeStart, rangeEnd])
 
     // Each path will compute its own dash values using its precise length
 
-    // Simple opacity animation that follows the same progress as the path
+    // Restore animated opacity over the progress window, but without pre-start hiding
     const strokeOpacityMV = useTransform<number, number>(
-        drawProgress,
-        (progress: number) => {
-            // Simple linear interpolation from start to end opacity
-            return opacityStart + (opacityEnd - opacityStart) * progress
-        }
+        pathDrawProgress,
+        (p: number) => opacityStart + (opacityEnd - opacityStart) * p
     )
 
-    // Subscribe to path progress and opacity changes for debug
+    // Subscribe to path progress for debug
     React.useEffect(() => {
         if (!debug) return
         const unsubPath = pathDrawProgress.onChange((v) => {
             setDebugPathProgress(v)
         })
-        const unsubOpacity = strokeOpacityMV.onChange((v) => {
-            setDebugOpacity(v)
-        })
+        const unsubOpacity = strokeOpacityMV.onChange((v) => setDebugOpacity(v))
         return () => {
             unsubPath && unsubPath()
             unsubOpacity && unsubOpacity()

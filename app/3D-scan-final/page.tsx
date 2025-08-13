@@ -23,6 +23,7 @@ import {
     useRef,
     useState,
     useEffect,
+    useLayoutEffect,
     createContext,
     ReactNode,
 } from "react"
@@ -462,12 +463,15 @@ const Scene = ({
     active,
     textureMap,
     depthMap,
-}: SceneProps & { textureMap?: any; depthMap?: any }) => {
+    initialAspectRatio,
+    onReady,
+}: SceneProps & { textureMap?: any; depthMap?: any; initialAspectRatio?: number; onReady?: () => void }) => {
     const { setIsLoading } = useContext(GlobalContext)
     // Subscribe to viewport/size so we re-render on container resize
     const viewport = useThree((state: any) => state.viewport)
     const size = useThree((state: any) => state.size)
     const materialRef = useRef<Mesh>(null)
+    const readySignaledRef = useRef(false)
 
     // Log dotColor changes (not every frame!) - removed for performance
 
@@ -515,6 +519,15 @@ const Scene = ({
         return Boolean(width && height)
     }, [aspectSourceTexture])
 
+    // Prefer preloaded ratio from HTML until Three textures expose dimensions
+    const effectiveAspectRatio = useMemo(() => {
+        if (isAspectReady) return imageAspectRatio
+        if (typeof initialAspectRatio === "number" && initialAspectRatio > 0) {
+            return initialAspectRatio
+        }
+        return imageAspectRatio
+    }, [isAspectReady, imageAspectRatio, initialAspectRatio])
+
     // Reset loading whenever the texture inputs change
     useEffect(() => {
         setIsLoading(true)
@@ -531,6 +544,17 @@ const Scene = ({
     const rgbaColor = useMemo(() => {
         return parseColorToRgba(dotColor || "#ffffff")
     }, [dotColor])
+
+    // Notify parent when Three textures and aspect are fully ready to avoid visible resize
+    useEffect(() => {
+        if (readySignaledRef.current) return
+        if (!onReady) return
+        const baseReady = showTexture ? !!(rawMap && ((rawMap as any).image || (rawMap as any).source?.data)) : true
+        if (isAspectReady && depthMapTexture && baseReady) {
+            readySignaledRef.current = true
+            onReady()
+        }
+    }, [onReady, isAspectReady, depthMapTexture, rawMap, showTexture])
 
     // Create background material for when texture is hidden
     const backgroundMaterial = useMemo(() => {
@@ -565,27 +589,27 @@ const Scene = ({
         uIntensity: { value: intensity }, // Renamed from uGradientIntensity
         uBloomStrength: { value: bloomStrength },
         uBloomRadius: { value: bloomRadius },
-        uAspectRatio: { value: imageAspectRatio }, // Dynamic aspect ratio
+        uAspectRatio: { value: effectiveAspectRatio }, // Dynamic aspect ratio (seeded to avoid initial flicker)
     })
 
     // Calculate responsive scaling for COVER behavior - image fills entire container
     const { width: scaleX, height: scaleY } = useMemo(() => {
         const viewportAspectRatio = viewport.width / viewport.height
 
-        if (imageAspectRatio > viewportAspectRatio) {
+        if (effectiveAspectRatio > viewportAspectRatio) {
             // Image is wider than viewport - scale to fill viewport height (image will be cropped on sides)
             return {
-                width: viewport.height * imageAspectRatio,
+                width: viewport.height * effectiveAspectRatio,
                 height: viewport.height,
             }
         } else {
             // Image is taller than viewport - scale to fill viewport width (image will be cropped on top/bottom)
             return {
                 width: viewport.width,
-                height: viewport.width / imageAspectRatio,
+                height: viewport.width / effectiveAspectRatio,
             }
         }
-    }, [viewport.width, viewport.height, imageAspectRatio])
+    }, [viewport.width, viewport.height, effectiveAspectRatio])
 
     // Store previous values to avoid unnecessary uniform updates
     const prevValuesRef = useRef({
@@ -601,7 +625,8 @@ const Scene = ({
     })
 
     // Initialize uniforms properly for both canvas and live environments
-    useEffect(() => {
+    // Use layout effect to ensure uniforms reflect final values before first paint
+    useLayoutEffect(() => {
         const effectTypeValue = effectType === "dots" ? 0.0 : 1.0
 
         // Set initial uniforms - this ensures canvas environment shows correct values
@@ -621,7 +646,7 @@ const Scene = ({
         }
 
         // Update aspect ratio uniform
-        uniformsRef.current.uAspectRatio.value = imageAspectRatio
+        uniformsRef.current.uAspectRatio.value = effectiveAspectRatio
     }, [
         progress,
         rgbaColor,
@@ -633,7 +658,7 @@ const Scene = ({
         bloomStrength,
         bloomRadius,
         depthMapTexture,
-        imageAspectRatio,
+        effectiveAspectRatio,
     ])
 
     // Update uniforms for the effects shader - optimized to only update when values change
@@ -989,6 +1014,11 @@ const Html = ({
         RenderTarget.current() === RenderTarget.canvas
     )
     const [assetsReady, setAssetsReady] = useState(false)
+    const [isFullyReady, setIsFullyReady] = useState(
+        RenderTarget.current() === RenderTarget.canvas
+    )
+    const [threeReady, setThreeReady] = useState(false)
+    const [localIsLoading, setLocalIsLoading] = useState(true)
 
     const containerRef = useRef<HTMLDivElement>(null)
     const animationControlsRef = useRef<any>(null)
@@ -1007,6 +1037,85 @@ const Html = ({
         ? (depthMap as any)?.src || (depthMap as any)
         : undefined
 
+    // Add direct texture loading and aspect ratio tracking
+    const [texturesLoaded, setTexturesLoaded] = useState(false)
+    const [aspectRatioReady, setAspectRatioReady] = useState(false)
+    const [preloadedAspectRatio, setPreloadedAspectRatio] = useState<number | undefined>(undefined)
+    const [layoutReady, setLayoutReady] = useState(false)
+    const [displayReady, setDisplayReady] = useState(
+        RenderTarget.current() === RenderTarget.canvas
+    )
+
+    useEffect(() => {
+        let cancelled = false
+        setLocalIsLoading(true)
+        setTexturesLoaded(false)
+        setAspectRatioReady(false)
+
+        const safeTextureMapUrl = hasTextureMapProp
+            ? textureMapUrl
+            : "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII="
+        const safeDepthMapUrl = hasDepthMapProp
+            ? depthMapUrl
+            : "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzY2NjY2NiIvPjx0ZXh0IHg9IjUwIiB5PSI1NSIgZm9udC1zaXplPSIxNiIgZmlsbD0id2hpdGUiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkRlcHRoPC90ZXh0Pjwvc3ZnPg=="
+
+        const loadImage = (url: string) => {
+            return new Promise<HTMLImageElement>((resolve, reject) => {
+                const img = new Image()
+                img.onload = () => resolve(img)
+                img.onerror = reject
+                img.src = url
+            })
+        }
+
+        Promise.all([
+            loadImage(safeTextureMapUrl!),
+            loadImage(safeDepthMapUrl!)
+        ]).then(([textureImg, depthImg]) => {
+            if (cancelled) return
+
+            setTexturesLoaded(true)
+
+            // Determine which image should drive aspect ratio
+            const aspectSourceImg = hasTextureMapProp ? textureImg : depthImg
+            const width = aspectSourceImg.naturalWidth || aspectSourceImg.width
+            const height = aspectSourceImg.naturalHeight || aspectSourceImg.height
+
+            if (width && height) {
+                setPreloadedAspectRatio(width / height)
+                setAspectRatioReady(true)
+                setLocalIsLoading(false)
+            }
+        }).catch(() => {
+            if (!cancelled) {
+                setLocalIsLoading(false)
+                setTexturesLoaded(true)
+                setAspectRatioReady(true)
+                // Fallback to a safe square ratio if we couldn't measure
+                setPreloadedAspectRatio((prev) => prev ?? 1)
+            }
+        })
+
+        return () => {
+            cancelled = true
+        }
+    }, [textureMapUrl, depthMapUrl, hasTextureMapProp, hasDepthMapProp])
+
+    // Defer first Canvas mount to the next layout pass to avoid initial incorrect scaling
+    useLayoutEffect(() => {
+        setLayoutReady(true)
+    }, [])
+
+    // After fully ready and layout ready, delay showing the canvas a tick to avoid visible resize
+    useEffect(() => {
+        if (RenderTarget.current() === RenderTarget.canvas) return
+        if (isFullyReady && layoutReady) {
+            const t = setTimeout(() => setDisplayReady(true), 100)
+            return () => clearTimeout(t)
+        }
+        setDisplayReady(RenderTarget.current() === RenderTarget.canvas)
+    }, [isFullyReady, layoutReady])
+
     // Animation function - plays once or loops
     const startLoop = (startFrom = 0, forceProgressUpdate = false) => {
         const scaleTransitionDuration = (transition: any, ratio: number) => {
@@ -1017,16 +1126,11 @@ const Html = ({
             }
             return transition
         }
-        console.log(
-            "startLoop called with startFrom:",
-            startFrom,
-            "forceProgressUpdate:",
-            forceProgressUpdate
-        )
+
 
         if (
             RenderTarget.current() === RenderTarget.canvas ||
-            isLoading ||
+            localIsLoading ||
             !inViewport
         ) {
             if (animationControlsRef.current) {
@@ -1171,7 +1275,9 @@ const Html = ({
         if (
             RenderTarget.current() !== RenderTarget.canvas &&
             !isHovering &&
-            inViewport
+            inViewport &&
+            isFullyReady &&
+            displayReady
         ) {
             startLoop(0, false)
         }
@@ -1182,18 +1288,18 @@ const Html = ({
                 animationControlsRef.current = null
             }
         }
-    }, [propAnimation?.play, loopType, loopTransition, isLoading, inViewport])
+    }, [propAnimation?.play, loopType, loopTransition, isFullyReady, inViewport, displayReady])
 
     // Handle hover state changes
     useEffect(() => {
-        if (RenderTarget.current() === RenderTarget.canvas || isLoading) return
+        if (RenderTarget.current() === RenderTarget.canvas || !isFullyReady) return
 
         if (isHovering && hoverEnabled && !isMobile) {
             if (animationControlsRef.current) {
                 animationControlsRef.current.stop()
             }
         }
-    }, [isHovering, hoverEnabled, propAnimation?.play, isMobile, isLoading])
+    }, [isHovering, hoverEnabled, propAnimation?.play, isMobile, isFullyReady])
 
     // Handle mouse movement to control the scanning effect
     const handleMouseMove = (e: React.MouseEvent) => {
@@ -1322,7 +1428,6 @@ const Html = ({
 
         // Capture the current progress before changing state
         const currentProgress = progress
-        console.log("Mouse leave - current progress:", currentProgress)
 
         setIsHovering(false)
         setIsTransitioning(false)
@@ -1352,7 +1457,7 @@ const Html = ({
                     if (
                         RenderTarget.current() !== RenderTarget.canvas &&
                         !isHovering &&
-                        !isLoading
+                        isFullyReady
                     ) {
                         // Resume from current progress
                         startLoop(progress, false)
@@ -1363,7 +1468,7 @@ const Html = ({
         )
         observer.observe(el)
         return () => observer.disconnect()
-    }, [isHovering, isLoading, progress, hasActivated])
+    }, [isHovering, isFullyReady, progress, hasActivated])
 
     // Preload images at low priority so the effect can show instantly on activation
     useEffect(() => {
@@ -1386,6 +1491,15 @@ const Html = ({
             cancelled = true
         }
     }, [textureMapUrl, depthMapUrl])
+
+    // Set fully ready only when all conditions are met (avoid circular gating on Scene mount)
+    useEffect(() => {
+        if (hasActivated && !localIsLoading && texturesLoaded && aspectRatioReady) {
+            setIsFullyReady(true)
+        } else {
+            setIsFullyReady(false)
+        }
+    }, [hasActivated, localIsLoading, texturesLoaded, aspectRatioReady])
 
     return (
     
@@ -1411,55 +1525,45 @@ const Html = ({
                         }}
                         aria-hidden="true"
                     />
-                    {!hasActivated && (
+                    {!isFullyReady && (
                         <div style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
-                            {showTexture && textureMapUrl ? (
-                                <img
-                                    src={textureMapUrl as string}
-                                    alt=""
-                                    style={{
-                                        position: "absolute",
-                                        inset: 0,
-                                        width: "100%",
-                                        height: "100%",
-                                        objectFit: "cover",
-                                    }}
-                                />
-                            ) : (
-                                <div
-                                    style={{
-                                        position: "absolute",
-                                        inset: 0,
-                                        width: "100%",
-                                        height: "100%",
-                                        background: resolvedBackgroundColor as string,
-                                    }}
-                                />
-                            )}
+                            <div
+                                style={{
+                                    position: "absolute",
+                                    inset: 0,
+                                    width: "100%",
+                                    height: "100%",
+                                    background: resolvedBackgroundColor as string,
+                                }}
+                            />
                         </div>
                     )}
-                    {hasActivated && (
-                        <WebGPUCanvas>
-                            <PostProcessing></PostProcessing>
-                            <Scene
-                                active={inViewport}
-                                dotSize={dotSize}
-                                dotColor={resolvedDotColor || "#ffffff"}
-                                tilingScale={tilingScale}
-                                effectType={effectType}
-                                gradientWidth={gradientWidth / 10}
-                                intensity={intensity}
-                                bloomStrength={bloomStrength}
-                                bloomRadius={bloomRadius}
-                                showTexture={showTexture}
-                                backgroundColor={
-                                    resolvedBackgroundColor || "#000000"
-                                }
-                                progress={progress}
-                                textureMap={textureMap}
-                                depthMap={depthMap}
-                            />
-                        </WebGPUCanvas>
+                    {isFullyReady && layoutReady && (
+                        <div style={{ position: "absolute", inset: 0, width: "100%", height: "100%", opacity: displayReady ? 1 : 0 }}>
+                            <WebGPUCanvas>
+                                <PostProcessing></PostProcessing>
+                                <Scene
+                                    active={inViewport}
+                                    dotSize={dotSize}
+                                    dotColor={resolvedDotColor || "#ffffff"}
+                                    tilingScale={tilingScale}
+                                    effectType={effectType}
+                                    gradientWidth={gradientWidth / 10}
+                                    intensity={intensity}
+                                    bloomStrength={bloomStrength}
+                                    bloomRadius={bloomRadius}
+                                    showTexture={showTexture}
+                                    backgroundColor={
+                                        resolvedBackgroundColor || "#000000"
+                                    }
+                                    progress={progress}
+                                    textureMap={textureMap}
+                                    depthMap={depthMap}
+                                    initialAspectRatio={preloadedAspectRatio}
+                                    onReady={() => setThreeReady(true)}
+                                />
+                            </WebGPUCanvas>
+                        </div>
                     )}
                 </div>
             

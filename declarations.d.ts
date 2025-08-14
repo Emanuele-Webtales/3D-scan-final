@@ -64,3 +64,26 @@ declare namespace JSX {
     shadowMaterial: any;
   }
 }
+
+// Minimal fallbacks for external libs without bundled types
+declare module 'ogl' {
+  export const Renderer: any;
+  export const Camera: any;
+  export const Mesh: any;
+  export const Plane: any;
+  export const Program: any;
+  export const RenderTarget: any;
+  export const Texture: any;
+}
+
+declare module 'resolve-lygia' {
+  export function resolveLygia(source: string): string;
+}
+
+declare module 'tweakpane' {
+  export class Pane {
+    constructor(options?: any);
+    addBinding(target: any, key: string, params?: any): any;
+    dispose(): void;
+  }
+}

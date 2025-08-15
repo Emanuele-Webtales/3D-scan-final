@@ -87,3 +87,9 @@ declare module 'tweakpane' {
     dispose(): void;
   }
 }
+
+// Added for glslify usage in shaders
+declare module 'glslify' {
+  const glsl: (source: string) => string
+  export default glsl
+}

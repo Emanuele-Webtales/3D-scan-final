@@ -65,9 +65,10 @@ export default function ScrambledText(props: ScrambleTextProps) {
     const currentMousePosRef = useRef({ x: 0, y: 0 })
     const scrambleIntervalRef = useRef<number | null>(null)
     const currentScrambledStates = useRef<Map<Element, string>>(new Map())
-    const scrambledCharsRef = useRef<Set<Element>>(new Set()) // Track which chars are actually being scrambled
     const nearbyCharsRef = useRef<Element[]>([])
     const animationFrameRef = useRef<number | null>(null)
+    const prevNearbySetRef = useRef<Set<Element>>(new Set())
+    const displayingScrambledRef = useRef<Set<Element>>(new Set())
 
     const TAG = tag
 
@@ -81,13 +82,13 @@ export default function ScrambledText(props: ScrambleTextProps) {
     }, [percentage])
 
     const toRgba = (hex: string, alpha: number): string => {
-        const normalized = hex.replace('#', '')
+        const normalized = hex.replace("#", "")
         const bigint = parseInt(
             normalized.length === 3
                 ? normalized
-                      .split('')
+                      .split("")
                       .map((c) => c + c)
-                      .join('')
+                      .join("")
                 : normalized,
             16
         )
@@ -103,7 +104,7 @@ export default function ScrambledText(props: ScrambleTextProps) {
         if (!rootRef.current) return
 
         const paragraph = rootRef.current.querySelector(
-            '[data-scramble-element]'
+            "[data-scramble-element]"
         ) as HTMLElement | null
         if (!paragraph) return
 
@@ -141,7 +142,11 @@ export default function ScrambledText(props: ScrambleTextProps) {
         const computeCharCenters = () => {
             charCentersRef.current = charsRef.current.map((char) => {
                 const rect = (char as HTMLElement).getBoundingClientRect()
-                return { el: char, cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 }
+                return {
+                    el: char,
+                    cx: rect.left + rect.width / 2,
+                    cy: rect.top + rect.height / 2,
+                }
             })
         }
 
@@ -170,7 +175,6 @@ export default function ScrambledText(props: ScrambleTextProps) {
             return charsToUse[Math.floor(Math.random() * charsToUse.length)]
         }
 
-
         // Function to check if mouse is within radius of any character
         const isMouseNearAnyChar = () => {
             if (!rootRef.current) return false
@@ -184,17 +188,13 @@ export default function ScrambledText(props: ScrambleTextProps) {
             return false
         }
 
-        // Time-based scrambling function that only updates the scrambled states
+        // Time-based scrambling function that updates ALL characters continuously
         const updateScrambledStates = () => {
-            if (!isMouseNearAnyChar()) return // Only scramble when mouse is near any character
-
-            // Prefer only nearby characters to reduce work on large texts
-            const sourceList = nearbyCharsRef.current.length
-                ? nearbyCharsRef.current
-                : charsRef.current
+            // Always scramble all characters when mouse is near any character
+            if (!isMouseNearAnyChar()) return
 
             // Get all non-space characters that can be scrambled
-            const scrambleableChars = sourceList.filter((char: Element) => {
+            const scrambleableChars = charsRef.current.filter((char: Element) => {
                 const originalChar = char.getAttribute("data-content") || ""
                 return originalChar.trim() !== "" // Don't scramble spaces
             })
@@ -203,13 +203,10 @@ export default function ScrambledText(props: ScrambleTextProps) {
             const total = scrambleableChars.length
             const charsToScramble = Math.min(
                 total,
-                Math.max(
-                    0,
-                    Math.floor((total * debouncedPercentage) / 100)
-                )
+                Math.max(0, Math.floor((total * debouncedPercentage) / 100))
             )
 
-            // Randomly select characters to scramble without shuffling the whole list
+            // Randomly select characters to scramble
             let charsToUpdate: Element[] = []
             if (charsToScramble >= total) {
                 charsToUpdate = scrambleableChars
@@ -226,17 +223,20 @@ export default function ScrambledText(props: ScrambleTextProps) {
                     .map((idx) => scrambleableChars[idx])
             }
 
-            // Clear previous scrambled characters tracking
-            scrambledCharsRef.current.clear()
+            // Build a set for O(1) membership checks
+            const chosenSet = new Set(charsToUpdate)
 
-            // Update only the selected characters
-            charsToUpdate.forEach((char: Element) => {
-                const scrambledChar = getRandomChar()
-                currentScrambledStates.current.set(char, scrambledChar)
-                scrambledCharsRef.current.add(char) // Track this character as being scrambled
+            // For this tick: chosen chars get a new scrambled glyph; all others revert to original
+            scrambleableChars.forEach((char: Element) => {
+                const originalChar = char.getAttribute("data-content") || ""
+                if (chosenSet.has(char)) {
+                    currentScrambledStates.current.set(char, getRandomChar())
+                } else {
+                    currentScrambledStates.current.set(char, originalChar)
+                }
             })
 
-            // Update the display if needed (only for characters currently being scrambled)
+            // Update the display to show current states
             updateCharacterDisplay()
             // Scrambling can change glyph widths; recompute centers to keep the hover circle accurate
             computeCharCenters()
@@ -249,6 +249,7 @@ export default function ScrambledText(props: ScrambleTextProps) {
             const r2 = radius * radius
             let anyNear = false
             const nearNow: Element[] = []
+            const prevSet = prevNearbySetRef.current
 
             for (let i = 0; i < charCentersRef.current.length; i++) {
                 const { el, cx, cy } = charCentersRef.current[i]
@@ -265,38 +266,39 @@ export default function ScrambledText(props: ScrambleTextProps) {
                 const originalChar = element.getAttribute("data-content") || ""
 
                 if (within) {
-                    const isBeingScrambled = scrambledCharsRef.current.has(el)
-                    if (isBeingScrambled) {
-                        const scrambledChar =
-                            currentScrambledStates.current.get(el) ||
-                            element.textContent || ""
-                        if (element.textContent !== scrambledChar)
-                            element.textContent = scrambledChar
-                        if (element.dataset.state !== "scrambled") {
-                            element.style.color = scrambleColor
-                            element.dataset.state = "scrambled"
-                        }
-                    } else {
-                        if (element.textContent !== originalChar)
-                            element.textContent = originalChar
-                        if (element.dataset.state !== "normal") {
-                            element.style.color = color
-                            element.dataset.state = "normal"
-                        }
+                    // Show scrambled content when within radius
+                    const scrambledChar = currentScrambledStates.current.get(el) || originalChar
+                    if (element.textContent !== scrambledChar) {
+                        element.textContent = scrambledChar
                     }
+
+                    // Track if this character is actually showing scrambled content
+                    const isShowingScrambled = element.textContent !== originalChar
+                    if (isShowingScrambled) {
+                        displayingScrambledRef.current.add(el)
+                    } else {
+                        displayingScrambledRef.current.delete(el)
+                    }
+                    element.dataset.state = isShowingScrambled ? "scrambled" : "hover"
                 } else {
                     if (element.textContent !== originalChar)
                         element.textContent = originalChar
-                    if (element.dataset.state !== "normal") {
-                        element.style.color = color
-                        element.dataset.state = "normal"
-                    }
+                    displayingScrambledRef.current.delete(el)
+                    element.dataset.state = "normal"
                 }
+
+                // Enforce color strictly based on what is currently displayed
+                const shouldUseScrambleColor = element.textContent !== originalChar
+                element.style.color = shouldUseScrambleColor ? scrambleColor : color
             }
 
             nearbyCharsRef.current = nearNow
             setIsMouseOverText(anyNear)
             isMouseOverTextRef.current = anyNear
+
+            // Keep the latest nearby set for potential future logic, but do not
+            // force a re-scramble here. Scrambling should follow the timer only.
+            prevNearbySetRef.current = new Set(nearNow)
         }
 
         // Global mouse move handler using requestAnimationFrame
@@ -317,8 +319,7 @@ export default function ScrambledText(props: ScrambleTextProps) {
                     // Trigger an immediate scramble so the effect starts instantly on hover
                     updateScrambledStates()
                     const clampedSpeed = Math.max(1, Math.min(100, speed))
-                    const intervalSeconds =
-                        1 - (clampedSpeed - 1) * (0.9 / 99) // 1 -> 1s, 100 -> 0.1s
+                    const intervalSeconds = 1 + (0.95 / 99) * (1 - clampedSpeed) // 1 -> 1s, 100 -> 0.05s
                     scrambleIntervalRef.current = window.setInterval(
                         updateScrambledStates,
                         intervalSeconds * 1000
@@ -356,7 +357,16 @@ export default function ScrambledText(props: ScrambleTextProps) {
             window.removeEventListener("resize", handleResize)
             window.removeEventListener("scroll", handleScroll, true)
         }
-    }, [radius, speed, debouncedPercentage, scrambleChars, color, scrambleColor, text, tag])
+    }, [
+        radius,
+        speed,
+        debouncedPercentage,
+        scrambleChars,
+        color,
+        scrambleColor,
+        text,
+        tag,
+    ])
 
     return (
         <div
@@ -438,7 +448,7 @@ addPropertyControls(ScrambledText, {
     },
     scrambleColor: {
         type: ControlType.Color,
-        title: "Scramble Color",
+        title: "Scramble",
         defaultValue: "#8855FF",
     },
     font: {
@@ -452,8 +462,8 @@ addPropertyControls(ScrambledText, {
     },
     scrambleChars: {
         type: ControlType.String,
-        title: "Scramble Characters",
-        placeholder: "Enter characters to use for scrambling",
+        title: "Characters",
+        placeholder: "Or leave empty",
         defaultValue: DEFAULT_SCRAMBLE_CHARS,
         description:
             "More components at [Framer University](https://frameruni.link/cc).",

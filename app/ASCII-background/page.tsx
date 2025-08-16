@@ -265,35 +265,15 @@ export default function Page() {
         let pane: any | null = null
       if (paneContainerRef.current) {
             pane = new Pane({ container: paneContainerRef.current } as any)
-            const folderNoise = (pane as any).addFolder({ title: "Motion" })
-            folderNoise.addBinding(perlinProgram.uniforms.uFrequency, "value", { min: 0, max: 12, step: 0.1, label: "Detail" })
-            folderNoise.addBinding(perlinProgram.uniforms.uSpeed, "value", { min: 0, max: 3, step: 0.01, label: "Speed" })
-            folderNoise.addBinding(perlinProgram.uniforms.uValue, "value", { min: 0, max: 1, step: 0.01, label: "Brightness" })
+            
+            // Basic motion controls
+            const folderMotion = (pane as any).addFolder({ title: "Motion" })
+            folderMotion.addBinding(perlinProgram.uniforms.uFrequency, "value", { min: 0, max: 12, step: 0.1, label: "Detail" })
+            folderMotion.addBinding(perlinProgram.uniforms.uSpeed, "value", { min: 0, max: 3, step: 0.01, label: "Speed" })
+            folderMotion.addBinding(perlinProgram.uniforms.uValue, "value", { min: 0, max: 1, step: 0.01, label: "Brightness" })
 
-            const folderAscii = (pane as any).addFolder({ title: "ASCII" })
-            folderAscii.addBinding(asciiProgram.uniforms.uCellSize, "value", { min: 4, max: 64, step: 1, label: "Character Size" })
-            folderAscii.addBinding(asciiProgram.uniforms.uGlyphScale, "value", { min: 0.25, max: 2, step: 0.01, label: "Character Fill" })
-            folderAscii.addBinding(asciiProgram.uniforms.uCellAspect, "value", { min: 0.5, max: 2, step: 0.01, label: "Character Width" })
-            folderAscii.addBinding(asciiProgram.uniforms.uContrast, "value", { min: 0.1, max: 3, step: 0.01, label: "Contrast" })
-            folderAscii.addBinding(asciiProgram.uniforms.uThresholdBias, "value", { min: -0.5, max: 0.5, step: 0.01, label: "Shadows/Highlights" })
-            folderAscii.addBinding(asciiProgram.uniforms.uGamma, "value", { min: 0.5, max: 2.2, step: 0.01, label: "Balance" })
-            folderAscii.addBinding(asciiProgram.uniforms.uInvert, "value", { min: 0, max: 1, step: 1, label: "Invert" })
-
-            const folderColor = (pane as any).addFolder({ title: "Color" })
-            const colorParams = { blackWhite: false }
-            const bwApi = folderColor.addBinding(colorParams, 'blackWhite', { label: 'Black & White' })
-            bwApi.on('change', (ev: any) => {
-                if (ev.value) {
-                    asciiProgram.uniforms.uUsePalette.value = 1.0
-                    asciiProgram.uniforms.uPaletteSize.value = 2.0
-                    asciiProgram.uniforms.uPalette0.value = [0.0, 0.0, 0.0]
-                    asciiProgram.uniforms.uPalette1.value = [1.0, 1.0, 1.0]
-                } else {
-                    asciiProgram.uniforms.uUsePalette.value = 0.0
-                }
-            })
-
-            const folderGlyph = (pane as any).addFolder({ title: "Characters" })
+            // Font and character controls
+            const folderFont = (pane as any).addFolder({ title: "Font & Characters" })
             const charParams = { set: defaultCharset, font: 'Monospace', fontSize: 0.8 }
             const fontOptions: Record<string, string> = {
                 Monospace: `ui-monospace, SFMono-Regular, Menlo, monospace`,
@@ -303,9 +283,83 @@ export default function Page() {
                 'IBM Plex Mono': 'IBM Plex Mono, monospace',
                 'JetBrains Mono': 'JetBrains Mono, monospace',
             }
-            const setApi = (folderGlyph as any).addBinding(charParams, 'set', { label: 'Character Set' })
-            const fontApi = (folderGlyph as any).addBinding(charParams, 'font', { options: Object.keys(fontOptions).reduce((acc: any, k) => { acc[k] = k; return acc }, {}), label: 'Font' })
-            const sizeApi = (folderGlyph as any).addBinding(charParams, 'fontSize', { min: 0.6, max: 1.0, step: 0.01, label: 'Font Size' })
+            const setApi = (folderFont as any).addBinding(charParams, 'set', { label: 'Character Set' })
+            const fontApi = (folderFont as any).addBinding(charParams, 'font', { options: Object.keys(fontOptions).reduce((acc: any, k) => { acc[k] = k; return acc }, {}), label: 'Font' })
+            const sizeApi = (folderFont as any).addBinding(charParams, 'fontSize', { min: 0.6, max: 1.0, step: 0.01, label: 'Font Size' })
+
+            // Color controls - simplified approach
+            const folderColor = (pane as any).addFolder({ title: "Colors" })
+            
+            // Background color - hex input
+            const bgColor = { hex: '#000000' }
+            folderColor.addBinding(bgColor, 'hex', { label: "Background Color" })
+            
+            // Update background color when changed
+            const bgBinding = folderColor.addBinding(bgColor, 'hex')
+            bgBinding.on('change', (ev: any) => {
+                const hex = ev.value
+                const r = parseInt(hex.slice(1, 3), 16) / 255
+                const g = parseInt(hex.slice(3, 5), 16) / 255
+                const b = parseInt(hex.slice(5, 7), 16) / 255
+                asciiProgram.uniforms.uBgColor.value = [r, g, b]
+            })
+            
+            // Character color mode
+            const colorMode = { mode: 'original' }
+            const colorModeApi = folderColor.addBinding(colorMode, 'mode', { 
+                options: { 
+                    'original': 'Original Colors', 
+                    'blackWhite': 'Black & White',
+                    'custom': 'Custom Palette'
+                }, 
+                label: 'Character Colors' 
+            })
+            
+            colorModeApi.on('change', (ev: any) => {
+                if (ev.value === 'blackWhite') {
+                    asciiProgram.uniforms.uUsePalette.value = 1.0
+                    asciiProgram.uniforms.uPaletteSize.value = 2.0
+                    asciiProgram.uniforms.uPalette0.value = [0.0, 0.0, 0.0]
+                    asciiProgram.uniforms.uPalette1.value = [1.0, 1.0, 1.0]
+                } else if (ev.value === 'custom') {
+                    asciiProgram.uniforms.uUsePalette.value = 1.0
+                    asciiProgram.uniforms.uPaletteSize.value = 3.0
+                } else {
+                    asciiProgram.uniforms.uUsePalette.value = 0.0
+                }
+            })
+
+            // Custom palette colors - using hex inputs
+            const customColors = folderColor.addFolder({ title: "Custom Palette" })
+            
+            const palette1 = { hex: '#000000' }
+            const palette2 = { hex: '#ffffff' }
+            const palette3 = { hex: '#ff00ff' }
+            
+            // Character colors with hex inputs
+            customColors.addBinding(palette1, 'hex', { label: "Character Color 1" })
+            customColors.addBinding(palette2, 'hex', { label: "Character Color 2" })
+            customColors.addBinding(palette3, 'hex', { label: "Character Color 3" })
+            
+            // Update uniforms when palette colors change
+            const updatePalette = () => {
+                const hexToRgb = (hex: string) => {
+                    const r = parseInt(hex.slice(1, 3), 16) / 255
+                    const g = parseInt(hex.slice(3, 5), 16) / 255
+                    const b = parseInt(hex.slice(5, 7), 16) / 255
+                    return [r, g, b]
+                }
+                
+                asciiProgram.uniforms.uPalette0.value = hexToRgb(palette1.hex)
+                asciiProgram.uniforms.uPalette1.value = hexToRgb(palette2.hex)
+                asciiProgram.uniforms.uPalette2.value = hexToRgb(palette3.hex)
+            }
+            
+            // Add change listeners to all palette color bindings
+            [palette1, palette2, palette3].forEach((palette) => {
+                const binding = customColors.addBinding(palette, 'hex')
+                binding.on('change', updatePalette)
+            })
 
             const rebuildAtlas = () => {
                 const css = `${Math.floor(64 * charParams.fontSize)}px ${fontOptions[charParams.font]}`

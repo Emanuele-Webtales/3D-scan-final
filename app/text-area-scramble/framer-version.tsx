@@ -175,6 +175,23 @@ export default function ScrambledText(props: ScrambleTextProps) {
             return charsToUse[Math.floor(Math.random() * charsToUse.length)]
         }
 
+        // Ensure the scrambled character is different from the original one
+        const getRandomCharDifferentFrom = (originalChar: string) => {
+            const charsToUse = scrambleChars || DEFAULT_SCRAMBLE_CHARS
+            if (!charsToUse || charsToUse.length === 0) return originalChar
+            // Try a few times to avoid matching the original
+            let candidate = charsToUse[Math.floor(Math.random() * charsToUse.length)]
+            if (charsToUse.length === 1) return candidate
+            for (let i = 0; i < 5 && candidate === originalChar; i++) {
+                candidate = charsToUse[Math.floor(Math.random() * charsToUse.length)]
+            }
+            if (candidate === originalChar) {
+                const idx = Math.max(0, charsToUse.indexOf(candidate))
+                return charsToUse[(idx + 1) % charsToUse.length]
+            }
+            return candidate
+        }
+
         // Function to check if mouse is within radius of any character
         const isMouseNearAnyChar = () => {
             if (!rootRef.current) return false
@@ -193,44 +210,59 @@ export default function ScrambledText(props: ScrambleTextProps) {
             // Always scramble all characters when mouse is near any character
             if (!isMouseNearAnyChar()) return
 
-            // Get all non-space characters that can be scrambled
-            const scrambleableChars = charsRef.current.filter((char: Element) => {
-                const originalChar = char.getAttribute("data-content") || ""
-                return originalChar.trim() !== "" // Don't scramble spaces
-            })
-
-            // Calculate how many characters to scramble based on percentage
-            const total = scrambleableChars.length
-            const charsToScramble = Math.min(
-                total,
-                Math.max(0, Math.floor((total * debouncedPercentage) / 100))
-            )
-
-            // Randomly select characters to scramble
-            let charsToUpdate: Element[] = []
-            if (charsToScramble >= total) {
-                charsToUpdate = scrambleableChars
-            } else if (charsToScramble > 0) {
-                const indices = Array.from({ length: total }, (_, i) => i)
-                for (let i = 0; i < charsToScramble; i++) {
-                    const j = i + Math.floor(Math.random() * (total - i))
-                    const tmp = indices[i]
-                    indices[i] = indices[j]
-                    indices[j] = tmp
+            // For 100%, scramble ALL characters including spaces
+            // For <100%, only scramble non-space characters
+            let charsToScramble: Element[]
+            let total: number
+            
+            if (debouncedPercentage >= 100) {
+                // 100% means ALL characters get scrambled
+                charsToScramble = charsRef.current
+                total = charsToScramble.length
+            } else {
+                // <100% means only non-space characters get scrambled
+                charsToScramble = charsRef.current.filter((char: Element) => {
+                    const originalChar = char.getAttribute("data-content") || ""
+                    return originalChar.trim() !== "" // Don't scramble spaces
+                })
+                total = charsToScramble.length
+                
+                // Calculate how many characters to scramble based on percentage
+                const charsToScrambleCount = Math.min(
+                    total,
+                    Math.max(0, Math.ceil((total * debouncedPercentage) / 100))
+                )
+                
+                // Randomly select characters to scramble
+                if (charsToScrambleCount >= total) {
+                    // All scrambleable chars get scrambled
+                } else if (charsToScrambleCount > 0) {
+                    const indices = Array.from({ length: total }, (_, i) => i)
+                    for (let i = 0; i < charsToScrambleCount; i++) {
+                        const j = i + Math.floor(Math.random() * (total - i))
+                        const tmp = indices[i]
+                        indices[i] = indices[j]
+                        indices[j] = tmp
+                    }
+                    charsToScramble = indices
+                        .slice(0, charsToScrambleCount)
+                        .map((idx) => charsToScramble[idx])
+                } else {
+                    charsToScramble = []
                 }
-                charsToUpdate = indices
-                    .slice(0, charsToScramble)
-                    .map((idx) => scrambleableChars[idx])
             }
 
             // Build a set for O(1) membership checks
-            const chosenSet = new Set(charsToUpdate)
+            const chosenSet = new Set(charsToScramble)
 
             // For this tick: chosen chars get a new scrambled glyph; all others revert to original
-            scrambleableChars.forEach((char: Element) => {
+            charsRef.current.forEach((char: Element) => {
                 const originalChar = char.getAttribute("data-content") || ""
                 if (chosenSet.has(char)) {
-                    currentScrambledStates.current.set(char, getRandomChar())
+                    currentScrambledStates.current.set(
+                        char,
+                        getRandomCharDifferentFrom(originalChar)
+                    )
                 } else {
                     currentScrambledStates.current.set(char, originalChar)
                 }

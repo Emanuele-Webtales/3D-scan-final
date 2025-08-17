@@ -408,7 +408,26 @@ export default function ScrambledText(props: ScrambleTextProps) {
         >
             {React.createElement(
                 TAG,
-                { style: { margin: 0, color }, "data-scramble-element": true },
+                { 
+                    style: { 
+                        margin: 0, 
+                        color,
+                        // Apply font styles directly to the text element
+                        fontSize: font.fontSize,
+                        lineHeight: font.lineHeight,
+                        fontFamily: font.fontFamily,
+                        fontWeight: font.fontWeight,
+                        fontStyle: font.fontStyle,
+                        textDecoration: font.textDecoration,
+                        letterSpacing: font.letterSpacing,
+                        textAlign: font.textAlign,
+                        // Reset any default browser styles that might interfere
+                        marginBlock: 0,
+                        marginInline: 0,
+                        padding: 0,
+                    }, 
+                    "data-scramble-element": true 
+                },
                 text
             )}
 

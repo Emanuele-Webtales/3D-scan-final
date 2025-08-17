@@ -12,6 +12,10 @@ import {
     RenderTarget,
 } from "framer"
 
+// Debug flag and helpers
+const DEBUG_PATH_REVEAL = true
+const clamp01 = (n: number) => Math.max(0, Math.min(1, n))
+
 // Function to extract all paths from SVG content and measure their lengths precisely
 const extractPathsFromSVG = (
     svgContent: string
@@ -35,13 +39,19 @@ const extractPathsFromSVG = (
     let maxPathWidth = 0
     let maxPathHeight = 0
     if (pathElements.length > 0) {
-        const tempSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+        const tempSvg = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "svg"
+        )
         tempSvg.style.position = "absolute"
         tempSvg.style.visibility = "hidden"
         document.body.appendChild(tempSvg)
 
         pathElements.forEach((pathEl) => {
-            const tempPath = document.createElementNS("http://www.w3.org/2000/svg", "path")
+            const tempPath = document.createElementNS(
+                "http://www.w3.org/2000/svg",
+                "path"
+            )
             tempPath.setAttribute("d", pathEl.getAttribute("d") || "")
             tempSvg.appendChild(tempPath)
             const length = tempPath.getTotalLength()
@@ -91,52 +101,210 @@ export default function PathReveal(props: any) {
     const drawProgress = useMotionValue(0)
     const triggerYRef = React.useRef<number | null>(null)
     const groupRef = React.useRef<SVGGElement>(null)
+    const initialProgressRef = React.useRef<number | null>(null)
+    const initDoneRef = React.useRef<boolean>(false)
 
-    
+    // State declarations (placed before effects that depend on them)
+    const [svgPaths, setSvgPaths] = React.useState<string[]>([])
+    const [pathLengths, setPathLengths] = React.useState<number[]>([])
+    const [longestPathLength, setLongestPathLength] = React.useState<number>(0)
 
-    // Start when the path reaches the chosen viewport anchor; then complete over computed distance
-    React.useEffect(() => {
-        const unsubscribe = scrollY.onChange((y) => {
+    // Storage helpers to persist last progress across reloads
+    const getStorageKey = React.useCallback(() => {
+        // Keyed by path and startPosition and distance to reduce collisions
+        const distancePx = Number(speed ?? scrollSpeed ?? 1000) || 1000
+        const path = typeof window !== "undefined" ? window.location?.pathname ?? "" : ""
+        return `PathReveal:last:${path}:${startPosition}:${distancePx}`
+    }, [startPosition, speed, scrollSpeed])
+    const storeProgress = React.useCallback(
+        (p: number) => {
+            try {
+                if (typeof window === "undefined") return
+                window.sessionStorage.setItem(getStorageKey(), String(clamp01(p)))
+            } catch {}
+        },
+        [getStorageKey]
+    )
+    const readStoredProgress = React.useCallback((): number | null => {
+        try {
+            if (typeof window === "undefined") return null
+            const raw = window.sessionStorage.getItem(getStorageKey())
+            if (raw == null) return null
+            const n = Number(raw)
+            if (!isFinite(n)) return null
+            return clamp01(n)
+        } catch {
+            return null
+        }
+    }, [getStorageKey])
+
+    // Read once for provisional first paint before init completes
+    const storedAtRender = React.useMemo(() => {
+        try {
+            if (typeof window === "undefined") return null
+            const raw = window.sessionStorage.getItem(getStorageKey())
+            if (raw == null) return null
+            const n = Number(raw)
+            if (!isFinite(n)) return null
+            return clamp01(n)
+        } catch {
+            return null
+        }
+    }, [getStorageKey])
+
+    // rAF×2 initialization after layout and scroll restoration
+    React.useLayoutEffect(() => {
+        if (RenderTarget.hasRestrictions()) {
+            drawProgress.set(1)
+            initialProgressRef.current = 1
+            return
+        }
+        if (!groupRef.current) return
+
+        let raf1 = 0
+        let raf2 = 0
+
+        const init = () => {
             if (!groupRef.current) return
+            const s = window.scrollY
             const rect = groupRef.current.getBoundingClientRect()
             const vh = window.innerHeight
-            const anchorY =
-                startPosition === "top"
-                    ? rect.top
-                    : startPosition === "center"
-                      ? rect.top + rect.height / 2
-                      : rect.bottom
-            // We want to trigger only when the chosen anchor crosses upward past the line
-            const thresholdY =
+            const centerOffset =
                 startPosition === "top"
                     ? 0
                     : startPosition === "center"
-                      ? vh / 2
-                      : vh
+                    ? rect.height / 2
+                    : rect.height
+            const thresholdY =
+                startPosition === "top" ? 0 : startPosition === "center" ? vh / 2 : vh
+            const distancePx = Number(speed ?? scrollSpeed ?? 1000) || 1000
+            // Try resuming from last stored progress if available
+            const stored = readStoredProgress()
+            if (stored != null && !RenderTarget.hasRestrictions()) {
+                const yCrossFromStored = s - stored * distancePx
+                triggerYRef.current = yCrossFromStored
+                drawProgress.set(stored)
+                initialProgressRef.current = stored
+                initDoneRef.current = true
+                if (DEBUG_PATH_REVEAL) {
+                    console.log("DEBUG_PATH_REVEAL init_resume", {
+                        s,
+                        rectTop: rect.top,
+                        rectHeight: rect.height,
+                        centerOffset,
+                        thresholdY,
+                        yCross: yCrossFromStored,
+                        distancePx,
+                        clamped: stored,
+                    })
+                }
+            } else {
+                const elementDocumentTop = rect.top + s
+                const yCross = elementDocumentTop + centerOffset - thresholdY
+                const clamped = clamp01((s - yCross) / distancePx)
+                triggerYRef.current = yCross
+                drawProgress.set(clamped)
+                initialProgressRef.current = clamped
+                initDoneRef.current = true
+                if (DEBUG_PATH_REVEAL) {
+                    console.log("DEBUG_PATH_REVEAL init", {
+                        s,
+                        rectTop: rect.top,
+                        rectHeight: rect.height,
+                        centerOffset,
+                        thresholdY,
+                        yCross,
+                        distancePx,
+                        clamped,
+                    })
+                }
+            }
+        }
 
-            // Reset trigger if element is above the threshold (before start)
-            if (anchorY > thresholdY) {
-                triggerYRef.current = null
-                // Before start, clamp to the configured start of the window,
-                // so visuals reflect the initial state rather than zero.
-                drawProgress.set(0)
+        raf1 = requestAnimationFrame(() => {
+            raf2 = requestAnimationFrame(init)
+        })
+
+        const onPageShow = (event: any) => {
+            if (event && event.persisted) {
+                cancelAnimationFrame(raf1)
+                cancelAnimationFrame(raf2)
+                requestAnimationFrame(() => requestAnimationFrame(init))
+            }
+        }
+        window.addEventListener("pageshow", onPageShow)
+
+        return () => {
+            cancelAnimationFrame(raf1)
+            cancelAnimationFrame(raf2)
+            window.removeEventListener("pageshow", onPageShow)
+        }
+    }, [svgPaths, startPosition, speed, scrollSpeed])
+
+    // Scroll handling with single-lock using canonical math
+    React.useEffect(() => {
+        const unsubscribe = scrollY.onChange((s) => {
+            if (RenderTarget.hasRestrictions()) return
+            if (!groupRef.current) return
+
+            const rect = groupRef.current.getBoundingClientRect()
+            const vh = window.innerHeight
+            const centerOffset =
+                startPosition === "top"
+                    ? 0
+                    : startPosition === "center"
+                    ? rect.height / 2
+                    : rect.height
+            const thresholdY =
+                startPosition === "top" ? 0 : startPosition === "center" ? vh / 2 : vh
+            const anchorY = rect.top + centerOffset
+            const distancePx = Number(speed ?? scrollSpeed ?? 1000) || 1000
+
+            // If init hasn't completed yet (rAF×2), avoid locking prematurely
+            if (!initDoneRef.current) {
+                if (DEBUG_PATH_REVEAL) {
+                    console.log("DEBUG_PATH_REVEAL waiting_init")
+                }
                 return
             }
 
-            // Lock trigger only when the anchor is at or above the threshold (crossed)
-            if (triggerYRef.current == null && anchorY <= thresholdY) {
-                triggerYRef.current = y
-                // Immediately snap visuals to the window start at trigger time
-                drawProgress.set(0)
+            if (triggerYRef.current == null) {
+                if (anchorY > thresholdY) {
+                    if (DEBUG_PATH_REVEAL) {
+                        console.log("DEBUG_PATH_REVEAL waiting", { anchorY, thresholdY })
+                    }
+                    return
+                }
+                const elementDocumentTop = rect.top + s
+                const yCross = elementDocumentTop + centerOffset - thresholdY
+                triggerYRef.current = yCross
+                const clamped = clamp01((s - yCross) / distancePx)
+                drawProgress.set(clamped)
+                if (initialProgressRef.current == null) initialProgressRef.current = clamped
+                storeProgress(clamped)
+                if (DEBUG_PATH_REVEAL) {
+                    console.log("DEBUG_PATH_REVEAL first_lock", {
+                        s,
+                        rectTop: rect.top,
+                        rectHeight: rect.height,
+                        centerOffset,
+                        thresholdY,
+                        yCross,
+                        distancePx,
+                        clamped,
+                    })
+                }
+                return
             }
 
-            // Use pixel-based scroll height (default 1000px if not specified)
-            const scrollHeight = Number(speed ?? scrollSpeed ?? 1000) || 1000
-            const distance = scrollHeight
-            const progressed = (y - (triggerYRef.current as number)) / distance
-            const clamped = Math.max(0, Math.min(1, progressed))
+            const yCross = triggerYRef.current as number
+            const progressed = (s - yCross) / distancePx
+            const clamped = clamp01(progressed)
             drawProgress.set(clamped)
-
+            storeProgress(clamped)
+            if (DEBUG_PATH_REVEAL) {
+                console.log("DEBUG_PATH_REVEAL update", { s, triggerY: yCross, progressed, clamped })
+            }
         })
 
         return () => {
@@ -163,16 +331,15 @@ export default function PathReveal(props: any) {
         }
     )
 
-    // State declarations
-    const [svgPaths, setSvgPaths] = React.useState<string[]>([])
-    const [pathLengths, setPathLengths] = React.useState<number[]>([])
-    const [longestPathLength, setLongestPathLength] = React.useState<number>(0)
+    // State declarations moved above
 
     // Keep a numeric snapshot of the mapped progress for per-path math
-    const [pathProgressValue, setPathProgressValue] = React.useState<number>(() => {
-        const initial = (pathDrawProgress as any)?.get?.()
-        return typeof initial === "number" ? initial : rangeStart
-    })
+    const [pathProgressValue, setPathProgressValue] = React.useState<number>(
+        () => {
+            const initial = (pathDrawProgress as any)?.get?.()
+            return typeof initial === "number" ? initial : rangeStart
+        }
+    )
     React.useEffect(() => {
         // Sync immediately when the range changes
         const current = (pathDrawProgress as any)?.get?.()
@@ -188,8 +355,6 @@ export default function PathReveal(props: any) {
         pathDrawProgress,
         (p: number) => opacityStart + (opacityEnd - opacityStart) * p
     )
-
-    
 
     // No combined path length needed
     const svgRef = React.useRef<SVGSVGElement>(null)
@@ -266,7 +431,7 @@ export default function PathReveal(props: any) {
     // Compute the widest and tallest individual path among all paths
     React.useLayoutEffect(() => {
         if (!svgPaths || svgPaths.length === 0 || !groupRef.current) return
-        const paths = Array.from(groupRef.current.querySelectorAll('path'))
+        const paths = Array.from(groupRef.current.querySelectorAll("path"))
         if (paths.length === 0) return
         let widest = 0
         let tallest = 0
@@ -298,7 +463,7 @@ export default function PathReveal(props: any) {
             const scaleX = rect.width / vbWidth
             const scaleY = rect.height / vbHeight
             const scale = Math.min(scaleX, scaleY) || 1
-            
+
             // Scale the stroke width to maintain correct visual appearance when SVG is scaled
             // This ensures the stroke looks the right thickness regardless of canvas size
             const adjustedStrokeWidth = beamWidth / scale
@@ -316,45 +481,61 @@ export default function PathReveal(props: any) {
     }, [beamWidth, viewBox])
 
     return (
-        <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", minWidth: maxPathWidth || undefined, minHeight: maxPathHeight || undefined }}>
-        <div style={{ position: "absolute", inset:0}}>
-            <svg
-                ref={svgRef}
-                width="100%"
-                height="100%"
-                viewBox={viewBox}
-                preserveAspectRatio="xMidYMid meet"
-                overflow="visible"
-            >
-                <g ref={groupRef}>
-                    {svgPaths.map((d, i) => {
-                        const len = pathLengths[i] ?? 0
-                        const dasharray = len > 0 ? `${len}` : "1"
-                        const isCanvas = RenderTarget.hasRestrictions()
-                        const effectiveProgress = isCanvas ? 1 : pathProgressValue
-                        const dashoffset = len > 0 ? (1 - effectiveProgress) * len : 0
-                        const opacityValue = isCanvas
-                            ? 1
-                            : opacityStart + (opacityEnd - opacityStart) * effectiveProgress
-                        return (
-                            <motion.path
-                                key={i}
-                                d={d}
-                                stroke={beamColor}
-                                strokeWidth={computedStrokeWidth}
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeOpacity={opacityValue as any}
-                                fill="none"
-                                strokeDasharray={dasharray}
-                                strokeDashoffset={dashoffset}
-                            />
-                        )
-                    })}
-                </g>
-            </svg>
-
-        </div>
+        <div
+            style={{
+                position: "relative",
+                width: "100%",
+                height: "100%",
+                display: "flex",
+                minWidth: maxPathWidth || undefined,
+                minHeight: maxPathHeight || undefined,
+            }}
+        >
+            <div style={{ position: "absolute", inset: 0 }}>
+                <svg
+                    ref={svgRef}
+                    width="100%"
+                    height="100%"
+                    viewBox={viewBox}
+                    preserveAspectRatio="xMidYMid meet"
+                    overflow="visible"
+                >
+                    <g ref={groupRef}>
+                        {svgPaths.map((d, i) => {
+                            const len = pathLengths[i] ?? 0
+                            const dasharray = len > 0 ? `${len}` : "1"
+                            const isCanvas = RenderTarget.hasRestrictions()
+                            const isProvisional = !isCanvas && initialProgressRef.current === null
+                            const effectiveProgress = isCanvas
+                                ? 1
+                                : isProvisional
+                                ? (storedAtRender ?? rangeStart)
+                                : pathProgressValue
+                            const dashoffset =
+                                len > 0 ? (1 - effectiveProgress) * len : 0
+                            const opacityValue = isCanvas
+                                ? 1
+                                : opacityStart +
+                                  (opacityEnd - opacityStart) *
+                                      effectiveProgress
+                            return (
+                                <motion.path
+                                    key={i}
+                                    d={d}
+                                    stroke={beamColor}
+                                    strokeWidth={computedStrokeWidth}
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeOpacity={opacityValue as any}
+                                    fill="none"
+                                    strokeDasharray={dasharray}
+                                    strokeDashoffset={dashoffset}
+                                />
+                            )
+                        })}
+                    </g>
+                </svg>
+            </div>
         </div>
     )
 }
@@ -464,4 +645,4 @@ addPropertyControls(PathReveal, {
     },
 })
 
-PathReveal.displayName = "Scroll Path Reveal"
+PathReveal.displayName = "Scroll Path Reveal DEV"

@@ -1,10 +1,5 @@
-import * as React from "react"
-import {
-    motion,
-    useTransform,
-    useViewportScroll,
-    useMotionValue,
-} from "framer-motion"
+import React, { useEffect, useLayoutEffect } from "react"
+import { motion, useTransform, useMotionValue, useScroll } from "framer-motion"
 import {
     addPropertyControls,
     ControlType,
@@ -12,8 +7,7 @@ import {
     RenderTarget,
 } from "framer"
 
-// Debug flag and helpers
-const DEBUG_PATH_REVEAL = true
+// Helpers
 const clamp01 = (n: number) => Math.max(0, Math.min(1, n))
 
 // Function to extract all paths from SVG content and measure their lengths precisely
@@ -93,224 +87,78 @@ export default function PathReveal(props: any) {
         beamWidth,
         opacity,
         progress,
-        scrollSpeed,
-        speed,
-        startPosition,
+        scrollSectionId,
+        startAnchor,
+        endAnchor,
+        anchors,
+        sticky,
     } = props
-    const { scrollY } = useViewportScroll()
-    const drawProgress = useMotionValue(0)
-    const triggerYRef = React.useRef<number | null>(null)
+    const { scrollY } = useScroll()
     const groupRef = React.useRef<SVGGElement>(null)
-    const initialProgressRef = React.useRef<number | null>(null)
-    const initDoneRef = React.useRef<boolean>(false)
 
     // State declarations (placed before effects that depend on them)
     const [svgPaths, setSvgPaths] = React.useState<string[]>([])
     const [pathLengths, setPathLengths] = React.useState<number[]>([])
-    const [longestPathLength, setLongestPathLength] = React.useState<number>(0)
 
-    // Storage helpers to persist last progress across reloads
-    const getStorageKey = React.useCallback(() => {
-        // Keyed by path and startPosition and distance to reduce collisions
-        const distancePx = Number(speed ?? scrollSpeed ?? 1000) || 1000
-        const path = typeof window !== "undefined" ? window.location?.pathname ?? "" : ""
-        return `PathReveal:last:${path}:${startPosition}:${distancePx}`
-    }, [startPosition, speed, scrollSpeed])
-    const storeProgress = React.useCallback(
-        (p: number) => {
-            try {
-                if (typeof window === "undefined") return
-                window.sessionStorage.setItem(getStorageKey(), String(clamp01(p)))
-            } catch {}
-        },
-        [getStorageKey]
-    )
-    const readStoredProgress = React.useCallback((): number | null => {
-        try {
-            if (typeof window === "undefined") return null
-            const raw = window.sessionStorage.getItem(getStorageKey())
-            if (raw == null) return null
-            const n = Number(raw)
-            if (!isFinite(n)) return null
-            return clamp01(n)
-        } catch {
-            return null
-        }
-    }, [getStorageKey])
+    // Resolve effective settings (support both new grouped props and legacy top-level)
+    const effectiveStartAnchor: "top" | "center" | "bottom" =
+        anchors?.start || startAnchor || "center"
+    const effectiveEndAnchor: "top" | "center" | "bottom" =
+        anchors?.end || endAnchor || "top"
+    const effectiveSectionId: string = sticky ? (scrollSectionId || "") : ""
 
-    // Read once for provisional first paint before init completes
-    const storedAtRender = React.useMemo(() => {
-        try {
-            if (typeof window === "undefined") return null
-            const raw = window.sessionStorage.getItem(getStorageKey())
-            if (raw == null) return null
-            const n = Number(raw)
-            if (!isFinite(n)) return null
-            return clamp01(n)
-        } catch {
-            return null
-        }
-    }, [getStorageKey])
-
-    // rAF×2 initialization after layout and scroll restoration
-    React.useLayoutEffect(() => {
-        if (RenderTarget.hasRestrictions()) {
-            drawProgress.set(1)
-            initialProgressRef.current = 1
-            return
-        }
-        if (!groupRef.current) return
-
-        let raf1 = 0
-        let raf2 = 0
-
-        const init = () => {
-            if (!groupRef.current) return
-            const s = window.scrollY
-            const rect = groupRef.current.getBoundingClientRect()
-            const vh = window.innerHeight
-            const centerOffset =
-                startPosition === "top"
-                    ? 0
-                    : startPosition === "center"
-                    ? rect.height / 2
-                    : rect.height
-            const thresholdY =
-                startPosition === "top" ? 0 : startPosition === "center" ? vh / 2 : vh
-            const distancePx = Number(speed ?? scrollSpeed ?? 1000) || 1000
-            // Try resuming from last stored progress if available
-            const stored = readStoredProgress()
-            if (stored != null && !RenderTarget.hasRestrictions()) {
-                const yCrossFromStored = s - stored * distancePx
-                triggerYRef.current = yCrossFromStored
-                drawProgress.set(stored)
-                initialProgressRef.current = stored
-                initDoneRef.current = true
-                if (DEBUG_PATH_REVEAL) {
-                    console.log("DEBUG_PATH_REVEAL init_resume", {
-                        s,
-                        rectTop: rect.top,
-                        rectHeight: rect.height,
-                        centerOffset,
-                        thresholdY,
-                        yCross: yCrossFromStored,
-                        distancePx,
-                        clamped: stored,
-                    })
-                }
-            } else {
-                const elementDocumentTop = rect.top + s
-                const yCross = elementDocumentTop + centerOffset - thresholdY
-                const clamped = clamp01((s - yCross) / distancePx)
-                triggerYRef.current = yCross
-                drawProgress.set(clamped)
-                initialProgressRef.current = clamped
-                initDoneRef.current = true
-                if (DEBUG_PATH_REVEAL) {
-                    console.log("DEBUG_PATH_REVEAL init", {
-                        s,
-                        rectTop: rect.top,
-                        rectHeight: rect.height,
-                        centerOffset,
-                        thresholdY,
-                        yCross,
-                        distancePx,
-                        clamped,
-                    })
-                }
-            }
-        }
-
-        raf1 = requestAnimationFrame(() => {
-            raf2 = requestAnimationFrame(init)
-        })
-
-        const onPageShow = (event: any) => {
-            if (event && event.persisted) {
-                cancelAnimationFrame(raf1)
-                cancelAnimationFrame(raf2)
-                requestAnimationFrame(() => requestAnimationFrame(init))
-            }
-        }
-        window.addEventListener("pageshow", onPageShow)
-
-        return () => {
-            cancelAnimationFrame(raf1)
-            cancelAnimationFrame(raf2)
-            window.removeEventListener("pageshow", onPageShow)
-        }
-    }, [svgPaths, startPosition, speed, scrollSpeed])
-
-    // Scroll handling with single-lock using canonical math
+    // When a scrollSectionId is provided, compute progress from that element's
+    // scroll position through the viewport. Equivalent to offset ["start end", "end start"].
+    const sectionProgressMV = useMotionValue(0)
+    const sectionElRef = React.useRef<HTMLElement | null>(null)
     React.useEffect(() => {
-        const unsubscribe = scrollY.onChange((s) => {
-            if (RenderTarget.hasRestrictions()) return
-            if (!groupRef.current) return
+        if (typeof window === "undefined") return
+        const specified = effectiveSectionId ? document.getElementById(effectiveSectionId) : null
+        sectionElRef.current = specified || (containerRef.current as HTMLElement | null)
+    }, [effectiveSectionId])
 
-            const rect = groupRef.current.getBoundingClientRect()
-            const vh = window.innerHeight
-            const centerOffset =
-                startPosition === "top"
-                    ? 0
-                    : startPosition === "center"
-                    ? rect.height / 2
-                    : rect.height
-            const thresholdY =
-                startPosition === "top" ? 0 : startPosition === "center" ? vh / 2 : vh
-            const anchorY = rect.top + centerOffset
-            const distancePx = Number(speed ?? scrollSpeed ?? 1000) || 1000
-
-            // If init hasn't completed yet (rAF×2), avoid locking prematurely
-            if (!initDoneRef.current) {
-                if (DEBUG_PATH_REVEAL) {
-                    console.log("DEBUG_PATH_REVEAL waiting_init")
-                }
-                return
-            }
-
-            if (triggerYRef.current == null) {
-                if (anchorY > thresholdY) {
-                    if (DEBUG_PATH_REVEAL) {
-                        console.log("DEBUG_PATH_REVEAL waiting", { anchorY, thresholdY })
-                    }
-                    return
-                }
-                const elementDocumentTop = rect.top + s
-                const yCross = elementDocumentTop + centerOffset - thresholdY
-                triggerYRef.current = yCross
-                const clamped = clamp01((s - yCross) / distancePx)
-                drawProgress.set(clamped)
-                if (initialProgressRef.current == null) initialProgressRef.current = clamped
-                storeProgress(clamped)
-                if (DEBUG_PATH_REVEAL) {
-                    console.log("DEBUG_PATH_REVEAL first_lock", {
-                        s,
-                        rectTop: rect.top,
-                        rectHeight: rect.height,
-                        centerOffset,
-                        thresholdY,
-                        yCross,
-                        distancePx,
-                        clamped,
-                    })
-                }
-                return
-            }
-
-            const yCross = triggerYRef.current as number
-            const progressed = (s - yCross) / distancePx
-            const clamped = clamp01(progressed)
-            drawProgress.set(clamped)
-            storeProgress(clamped)
-            if (DEBUG_PATH_REVEAL) {
-                console.log("DEBUG_PATH_REVEAL update", { s, triggerY: yCross, progressed, clamped })
-            }
-        })
-
-        return () => {
-            unsubscribe()
+    // Warn when sticky is enabled but no section id is provided; we will gracefully fall back
+    useEffect(() => {
+        if (sticky && !effectiveSectionId) {
+            console.warn(
+                "[PathReveal] sticky is enabled but no scrollSectionId provided. Falling back to this component's container."
+            )
         }
-    }, [scrollY, startPosition, speed, scrollSpeed])
+    }, [sticky, effectiveSectionId])
+
+    // Keep section progress in sync on scroll and resize
+    useEffect(() => {
+        // Always compute based on the resolved target (either provided id or our container)
+        const compute = () => {
+            const el = sectionElRef.current
+            if (!el) return
+            const rect = el.getBoundingClientRect()
+            const vh = window.innerHeight || 0
+            const elementTop = rect.top
+            const elementBottom = rect.bottom
+            const startLine = effectiveStartAnchor === "top" ? 0 : effectiveStartAnchor === "center" ? vh / 2 : vh
+            const endLine = effectiveEndAnchor === "top" ? 0 : effectiveEndAnchor === "center" ? vh / 2 : vh
+            // Progress 0 at when elementTop reaches startLine; 1 when elementBottom reaches endLine
+            const totalDistance = (elementBottom - endLine) - (elementTop - startLine)
+            const traveled = (vh - startLine) - (elementTop - startLine)
+            // Equivalent simpler form using rects:
+            const totalPx = (rect.height + (startLine - endLine)) || rect.height
+            const traveledPx = (startLine - elementTop)
+            const p = clamp01(totalPx !== 0 ? traveledPx / totalPx : 0)
+            sectionProgressMV.set(p)
+        }
+        // Compute once immediately and then on scroll/resize
+        compute()
+        const unsub = scrollY.onChange(compute)
+        const onResize = () => compute()
+        window.addEventListener("resize", onResize)
+        return () => {
+            unsub()
+            window.removeEventListener("resize", onResize)
+        }
+    }, [effectiveSectionId, effectiveStartAnchor, effectiveEndAnchor, scrollY])
+
+    // All progress is driven solely by the section element's position
 
     // Resolve opacity start/end from object prop
     const opacityStart: number =
@@ -324,14 +172,12 @@ export default function PathReveal(props: any) {
 
     // Calculate the visible portion of the path based on start and end progress
     const pathDrawProgress = useTransform<number, number>(
-        drawProgress,
+        sectionProgressMV,
         (scrollProgress: number) => {
             // Linear interpolation from rangeStart to rangeEnd
             return rangeStart + (rangeEnd - rangeStart) * scrollProgress
         }
     )
-
-    // State declarations moved above
 
     // Keep a numeric snapshot of the mapped progress for per-path math
     const [pathProgressValue, setPathProgressValue] = React.useState<number>(
@@ -340,7 +186,7 @@ export default function PathReveal(props: any) {
             return typeof initial === "number" ? initial : rangeStart
         }
     )
-    React.useEffect(() => {
+    useEffect(() => {
         // Sync immediately when the range changes
         const current = (pathDrawProgress as any)?.get?.()
         if (typeof current === "number") setPathProgressValue(current)
@@ -350,14 +196,11 @@ export default function PathReveal(props: any) {
 
     // Each path will compute its own dash values using its precise length
 
-    // Restore animated opacity over the progress window, but without pre-start hiding
-    const strokeOpacityMV = useTransform<number, number>(
-        pathDrawProgress,
-        (p: number) => opacityStart + (opacityEnd - opacityStart) * p
-    )
+    // Restore animated opacity over the progress window
 
     // No combined path length needed
     const svgRef = React.useRef<SVGSVGElement>(null)
+    const containerRef = React.useRef<HTMLDivElement>(null)
     const [viewBox, setViewBox] = React.useState<string | undefined>(undefined)
     const [computedStrokeWidth, setComputedStrokeWidth] =
         React.useState<number>(beamWidth)
@@ -369,12 +212,11 @@ export default function PathReveal(props: any) {
         const setPathsAndLength = (
             paths: string[],
             lengths: number[],
-            longest: number
+            _longest: number
         ) => {
             if (!cancelled) {
                 setSvgPaths(paths)
                 setPathLengths(lengths)
-                setLongestPathLength(longest)
             }
         }
 
@@ -415,7 +257,7 @@ export default function PathReveal(props: any) {
     // Both path drawing and opacity are tied to the same drawProgress
 
     // Compute a proper viewBox from the actual paths geometry once they're rendered
-    React.useLayoutEffect(() => {
+    useLayoutEffect(() => {
         if (!svgPaths || svgPaths.length === 0 || !groupRef.current) return
         const bbox = groupRef.current.getBBox()
         if (bbox && bbox.width > 0 && bbox.height > 0) {
@@ -429,7 +271,7 @@ export default function PathReveal(props: any) {
     }, [svgPaths, computedStrokeWidth, beamWidth])
 
     // Compute the widest and tallest individual path among all paths
-    React.useLayoutEffect(() => {
+    useLayoutEffect(() => {
         if (!svgPaths || svgPaths.length === 0 || !groupRef.current) return
         const paths = Array.from(groupRef.current.querySelectorAll("path"))
         if (paths.length === 0) return
@@ -446,7 +288,8 @@ export default function PathReveal(props: any) {
     }, [svgPaths, computedStrokeWidth, beamWidth])
 
     // Keep stroke width in screen pixels by adjusting based on SVG scale
-    React.useEffect(() => {
+    // Additionally, in Framer canvas, detect editor zoom changes (which do not trigger ResizeObserver)
+    useEffect(() => {
         const updateStroke = () => {
             if (!svgRef.current || !viewBox) {
                 setComputedStrokeWidth(beamWidth)
@@ -463,9 +306,6 @@ export default function PathReveal(props: any) {
             const scaleX = rect.width / vbWidth
             const scaleY = rect.height / vbHeight
             const scale = Math.min(scaleX, scaleY) || 1
-
-            // Scale the stroke width to maintain correct visual appearance when SVG is scaled
-            // This ensures the stroke looks the right thickness regardless of canvas size
             const adjustedStrokeWidth = beamWidth / scale
             setComputedStrokeWidth(adjustedStrokeWidth)
         }
@@ -474,14 +314,37 @@ export default function PathReveal(props: any) {
         const ro = new ResizeObserver(updateStroke)
         if (svgRef.current) ro.observe(svgRef.current)
         window.addEventListener("resize", updateStroke)
+
+        // In Framer canvas, zooming the editor scales the element visually without firing ResizeObserver.
+        // Poll via rAF to detect bounding rect changes and recompute.
+        let rafId = 0
+        const lastSize = { width: 0, height: 0 }
+        const tick = () => {
+            if (RenderTarget.current() === RenderTarget.canvas && svgRef.current) {
+                const rect = svgRef.current.getBoundingClientRect()
+                if (
+                    Math.abs(rect.width - lastSize.width) > 0.5 ||
+                    Math.abs(rect.height - lastSize.height) > 0.5
+                ) {
+                    lastSize.width = rect.width
+                    lastSize.height = rect.height
+                    updateStroke()
+                }
+            }
+            rafId = requestAnimationFrame(tick)
+        }
+        rafId = requestAnimationFrame(tick)
+
         return () => {
             ro.disconnect()
             window.removeEventListener("resize", updateStroke)
+            cancelAnimationFrame(rafId)
         }
     }, [beamWidth, viewBox])
 
     return (
         <div
+            ref={containerRef}
             style={{
                 position: "relative",
                 width: "100%",
@@ -505,12 +368,7 @@ export default function PathReveal(props: any) {
                             const len = pathLengths[i] ?? 0
                             const dasharray = len > 0 ? `${len}` : "1"
                             const isCanvas = RenderTarget.hasRestrictions()
-                            const isProvisional = !isCanvas && initialProgressRef.current === null
-                            const effectiveProgress = isCanvas
-                                ? 1
-                                : isProvisional
-                                ? (storedAtRender ?? rangeStart)
-                                : pathProgressValue
+                            const effectiveProgress = isCanvas ? 1 : pathProgressValue
                             const dashoffset =
                                 len > 0 ? (1 - effectiveProgress) * len : 0
                             const opacityValue = isCanvas
@@ -548,10 +406,11 @@ PathReveal.defaultProps = {
     beamWidth: 1,
     opacity: { start: 0, end: 1 },
     progress: { start: 0, end: 1 },
-    // Scroll height in pixels - how much scroll distance needed to complete animation
-    speed: 1000,
-    scrollSpeed: 0,
-    startPosition: "center",
+    scrollSectionId: "",
+    startAnchor: "center",
+    endAnchor: "top",
+    anchors: { start: "center", end: "top" },
+    sticky: false,
 }
 
 addPropertyControls(PathReveal, {
@@ -575,14 +434,45 @@ addPropertyControls(PathReveal, {
         displayTextArea: true,
         hidden: (props) => props.inputType !== "code",
     },
-    startPosition: {
-        type: ControlType.Enum,
-        title: "Start",
-        defaultValue: "center",
-        options: ["top", "center", "bottom"],
-        optionTitles: ["Top", "Center", "Bottom"],
-        displaySegmentedControl: true,
+    sticky: {
+        type: ControlType.Boolean,
+        title: "Sticky",
+        enabledTitle: "Yes",
+        disabledTitle: "No",
+        defaultValue: false,
     },
+    scrollSectionId: {
+        type: ControlType.String,
+        title: "Section ID",
+        placeholder: "e.g. section-1",
+        hidden: (props) => !props.sticky,
+    },
+    // Anchors group
+    anchors: {
+        type: ControlType.Object,
+        title: "Anchors",
+        controls: {
+            start: {
+                type: ControlType.Enum,
+                title: "Start at",
+                options: ["top", "center", "bottom"],
+                optionTitles: ["Top", "Center", "Bottom"],
+                displaySegmentedControl: true,
+                segmentedControlDirection: "vertical",
+                defaultValue: "center",
+            },
+            end: {
+                type: ControlType.Enum,
+                title: "End at",
+                options: ["top", "center", "bottom"],
+                optionTitles: ["Top", "Center", "Bottom"],
+                displaySegmentedControl: true,
+                segmentedControlDirection: "vertical",
+                defaultValue: "top",
+            },
+        },
+    },
+    // Removed legacy start/end mapping props in favor of scrollSectionId-driven progress
     beamColor: { type: ControlType.Color, title: "Beam Color" },
     beamWidth: {
         type: ControlType.Number,
@@ -634,15 +524,10 @@ addPropertyControls(PathReveal, {
                 defaultValue: 1,
             },
         },
-    },
-    speed: {
-        type: ControlType.Number,
-        title: "Distance",
-        min: 1,
-        max: undefined,
-        step: 50,
-        defaultValue: 1000,
-    },
+        description:
+        "More components at [Framer University](https://frameruni.link/cc).",
+    }
+    // Removed legacy distance and offset controls
 })
 
 PathReveal.displayName = "Scroll Path Reveal DEV"

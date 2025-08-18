@@ -201,6 +201,7 @@ export default function PathReveal(props: any) {
     // No combined path length needed
     const svgRef = React.useRef<SVGSVGElement>(null)
     const containerRef = React.useRef<HTMLDivElement>(null)
+    const zoomProbeRef = React.useRef<HTMLDivElement>(null)
     const [viewBox, setViewBox] = React.useState<string | undefined>(undefined)
     const [computedStrokeWidth, setComputedStrokeWidth] =
         React.useState<number>(beamWidth)
@@ -287,58 +288,67 @@ export default function PathReveal(props: any) {
         setMaxPathHeight(Math.ceil(tallest + pad * 2))
     }, [svgPaths, computedStrokeWidth, beamWidth])
 
-    // Keep stroke width in screen pixels by adjusting based on SVG scale
-    // Additionally, in Framer canvas, detect editor zoom changes (which do not trigger ResizeObserver)
+    // Stroke width behavior with canvas zoom detection via 20x20 probe
     useEffect(() => {
-        const updateStroke = () => {
-            if (!svgRef.current || !viewBox) {
+        const compute = () => {
+            const el = containerRef.current
+            const svgEl = svgRef.current
+            if (!el || !svgEl) {
                 setComputedStrokeWidth(beamWidth)
                 return
             }
-            const rect = svgRef.current.getBoundingClientRect()
-            const parts = viewBox.split(" ").map(Number)
-            const vbWidth = parts[2] || 0
-            const vbHeight = parts[3] || 0
-            if (vbWidth <= 0 || vbHeight <= 0) {
-                setComputedStrokeWidth(beamWidth)
-                return
-            }
-            const scaleX = rect.width / vbWidth
-            const scaleY = rect.height / vbHeight
+            const probe = zoomProbeRef.current
+            const zoom = probe ? (probe.getBoundingClientRect().width / 20) : 1
+            const rect = svgEl.getBoundingClientRect()
+            const parts = (viewBox || "0 0 100 100").split(" ").map(Number)
+            const vbWidth = parts[2] || 100
+            const vbHeight = parts[3] || 100
+            const safeZoom = Math.max(zoom, 0.0001)
+            // Remove editor zoom from the measured size so scale matches preview/live
+            const scaleX = (rect.width / safeZoom) / vbWidth
+            const scaleY = (rect.height / safeZoom) / vbHeight
             const scale = Math.min(scaleX, scaleY) || 1
-            const adjustedStrokeWidth = beamWidth / scale
-            setComputedStrokeWidth(adjustedStrokeWidth)
+            const next = beamWidth / scale
+            setComputedStrokeWidth((prev) => (Math.abs(prev - next) > 0.05 ? next : prev))
         }
 
-        updateStroke()
-        const ro = new ResizeObserver(updateStroke)
-        if (svgRef.current) ro.observe(svgRef.current)
-        window.addEventListener("resize", updateStroke)
-
-        // In Framer canvas, zooming the editor scales the element visually without firing ResizeObserver.
-        // Poll via rAF to detect bounding rect changes and recompute.
-        let rafId = 0
-        const lastSize = { width: 0, height: 0 }
-        const tick = () => {
-            if (RenderTarget.current() === RenderTarget.canvas && svgRef.current) {
-                const rect = svgRef.current.getBoundingClientRect()
-                if (
-                    Math.abs(rect.width - lastSize.width) > 0.5 ||
-                    Math.abs(rect.height - lastSize.height) > 0.5
-                ) {
-                    lastSize.width = rect.width
-                    lastSize.height = rect.height
-                    updateStroke()
+        if (RenderTarget.current() === RenderTarget.canvas) {
+            let rafId = 0
+            const last = { ts: 0, zoom: 0, w: 0, h: 0 }
+            const TICK_MS = 250 // throttle to 4Hz to avoid unnecessary work
+            const EPS_ZOOM = 0.001
+            const EPS_SIZE = 0.5
+            const tick = (now?: number) => {
+                const probe = zoomProbeRef.current
+                const svgEl = svgRef.current
+                if (probe && svgEl) {
+                    const currentZoom = probe.getBoundingClientRect().width / 20
+                    const r = svgEl.getBoundingClientRect()
+                    const timeOk = !last.ts || (now || performance.now()) - last.ts >= TICK_MS
+                    const zoomChanged = Math.abs(currentZoom - last.zoom) > EPS_ZOOM
+                    const sizeChanged = Math.abs(r.width - last.w) > EPS_SIZE || Math.abs(r.height - last.h) > EPS_SIZE
+                    if (timeOk && (zoomChanged || sizeChanged)) {
+                        last.ts = now || performance.now()
+                        last.zoom = currentZoom
+                        last.w = r.width
+                        last.h = r.height
+                        compute()
+                    }
                 }
+                rafId = requestAnimationFrame(tick)
             }
             rafId = requestAnimationFrame(tick)
+            return () => cancelAnimationFrame(rafId)
         }
-        rafId = requestAnimationFrame(tick)
 
+        // Preview/Live: only respond to real size changes, not every animation frame
+        compute()
+        const ro = new ResizeObserver(() => compute())
+        if (containerRef.current) ro.observe(containerRef.current)
+        window.addEventListener("resize", compute)
         return () => {
             ro.disconnect()
-            window.removeEventListener("resize", updateStroke)
-            cancelAnimationFrame(rafId)
+            window.removeEventListener("resize", compute)
         }
     }, [beamWidth, viewBox])
 
@@ -355,6 +365,11 @@ export default function PathReveal(props: any) {
             }}
         >
             <div style={{ position: "absolute", inset: 0 }}>
+                {/* Invisible 20px probe to detect editor zoom in canvas */}
+                <div
+                    ref={zoomProbeRef}
+                    style={{ position: "absolute", width: 20, height: 20, opacity: 0, pointerEvents: "none" }}
+                />
                 <svg
                     ref={svgRef}
                     width="100%"
@@ -388,6 +403,7 @@ export default function PathReveal(props: any) {
                                     fill="none"
                                     strokeDasharray={dasharray}
                                     strokeDashoffset={dashoffset}
+                                    
                                 />
                             )
                         })}
@@ -453,20 +469,20 @@ addPropertyControls(PathReveal, {
         title: "Anchors",
         controls: {
             start: {
-                type: ControlType.Enum,
+        type: ControlType.Enum,
                 title: "Start at",
                 options: ["top", "center", "bottom"],
                 optionTitles: ["Top", "Center", "Bottom"],
                 displaySegmentedControl: true,
                 segmentedControlDirection: "vertical",
-                defaultValue: "center",
+        defaultValue: "center",
             },
             end: {
                 type: ControlType.Enum,
                 title: "End at",
-                options: ["top", "center", "bottom"],
-                optionTitles: ["Top", "Center", "Bottom"],
-                displaySegmentedControl: true,
+        options: ["top", "center", "bottom"],
+        optionTitles: ["Top", "Center", "Bottom"],
+        displaySegmentedControl: true,
                 segmentedControlDirection: "vertical",
                 defaultValue: "top",
             },

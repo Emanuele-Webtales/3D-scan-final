@@ -1626,7 +1626,7 @@ export default function Home(props: {
     if (!hasTextureMap && !hasDepthMap) {
         return (
             <div style={{ height: "100%", width: "100%", position: "relative" }}>
-                {/* Invisible sizing element - provides intrinsic dimensions for Fit sizing (prevents 40px/0px collapse) */}
+               
                 <div
                     style={{ height: "100%", width: "100%", position: "relative", display: "flex", justifyContent: "center", alignItems: "center"}}
                 >

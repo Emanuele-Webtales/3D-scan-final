@@ -1,391 +1,462 @@
 'use client'
 
-import React, { useEffect, useRef } from 'react'
+import * as React from 'react'
 import * as THREE from 'three'
 
-// Vertex shader (pass-through)
-const vertexShader = /* glsl */ `
-  varying vec2 v_uv;
-  void main() {
-    v_uv = uv;
-    vec3 pos = position;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-  }
-`
-
-// Keep simplex noise inline to avoid bundler plugins; math matches the tutorial
-const simplexNoise3D = /* glsl */ `
-  vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-  vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
-  vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
-  vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
-  float snoise3(vec3 v) {
-    const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
-    const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
-    vec3 i  = floor(v + dot(v, C.yyy) );
-    vec3 x0 = v - i + dot(i, C.xxx) ;
-    vec3 g = step(x0.yzx, x0.xyz);
-    vec3 l = 1.0 - g;
-    vec3 i1 = min( g.xyz, l.zxy );
-    vec3 i2 = max( g.xyz, l.zxy );
-    vec3 x1 = x0 - i1 + C.xxx;
-    vec3 x2 = x0 - i2 + C.yyy;
-    vec3 x3 = x0 - D.yyy;
-    i = mod289(i);
-    vec4 p = permute( permute( permute(
-               i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
-             + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))
-             + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
-    float n_ = 0.142857142857;
-    vec3  ns = n_ * D.wyz - D.xzx;
-    vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
-    vec4 x_ = floor(j * ns.z);
-    vec4 y_ = floor(j - 7.0 * x_ );
-    vec4 x = x_ *ns.x + ns.yyyy;
-    vec4 y = y_ *ns.x + ns.yyyy;
-    vec4 h = 1.0 - abs(x) - abs(y);
-    vec4 b0 = vec4( x.xy, y.xy );
-    vec4 b1 = vec4( x.zw, y.zw );
-    vec4 s0 = floor(b0)*2.0 + 1.0;
-    vec4 s1 = floor(b1)*2.0 + 1.0;
-    vec4 sh = -step(h, vec4(0.0));
-    vec4 a0 = b0.xzyw + s0.xzyw*sh.xzyw;
-    vec4 a1 = b1.xzyw + s1.xzyw*sh.xzyw;
-    vec3 p0 = vec3(a0.xy,h.x);
-    vec3 p1 = vec3(a0.zw,h.y);
-    vec3 p2 = vec3(a1.xy,h.z);
-    vec3 p3 = vec3(a1.zw,h.w);
-    vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
-    p0 *= norm.x;
-    p1 *= norm.y;
-    p2 *= norm.z;
-    p3 *= norm.w;
-    vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
-    m = m * m;
-    return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3) ) );
-  }
-`
-
-// Gooey fragment shader (reference gooeyShader.glsl adapted one-to-one)
-const gooeyFragmentShader = /* glsl */ `
-  precision highp float;
-  const float PR = 1.0; // we'll pass device pixel ratio in u_res already
-
-  uniform sampler2D u_map;
-  uniform sampler2D u_hovermap;
-  uniform float u_alpha;
-  uniform float u_time;
-  uniform float u_progressHover;
-  uniform float u_progressClick;
-  uniform vec2 u_res;
-  uniform vec2 u_mouse;
-  uniform vec2 u_ratio;
-  uniform vec2 u_hoverratio;
-  varying vec2 v_uv;
-
-  ${simplexNoise3D}
-
-  float circle(in vec2 _st, in float _radius, in float blurriness){
-    vec2 dist = _st;
-    return 1. - smoothstep(_radius-(_radius*blurriness), _radius+(_radius*blurriness), dot(dist,dist)*4.0);
-  }
-
-  void main() {
-    vec2 resolution = u_res * PR;
-    float time = u_time * 0.05;
-    float progress = u_progressClick;
-
-    float progressHover = u_progressHover;
-    vec2 uv = v_uv;
-    vec2 uv_h = v_uv;
-
-    vec2 st = gl_FragCoord.xy / resolution.xy - vec2(.5);
-    st.y *= resolution.y / resolution.x;
-
-    vec2 mouse = vec2((u_mouse.x / u_res.x) * 2. - 1.,-(u_mouse.y / u_res.y) * 2. + 1.) * -.5;
-    mouse.y *= resolution.y / resolution.x;
-
-    vec2 cpos = st + mouse;
-
-    float grd = 0.1 * progressHover;
-
-    float sqr = 100. * ((smoothstep(0., grd, uv.x) - smoothstep(1. - grd, 1., uv.x)) * (smoothstep(0., grd, uv.y) - smoothstep(1. - grd, 1., uv.y))) - 10.;
-
-    float c = circle(cpos, .04 * progressHover + progress * 0.8, 2.) * 50.;
-    float c2 = circle(cpos, .01 * progressHover + progress * 0.5, 2.);
-
-    float offX = uv.x + sin(uv.y + time * 2.);
-    float offY = uv.y - time * .2 - cos(time * 2.) * 0.1;
-    float nc = (snoise3(vec3(offX, offY, time * .5) * 8.)) * progressHover;
-    float nh = (snoise3(vec3(offX, offY, time * .5 ) * 2.)) * .1;
-
-    c2 = smoothstep(.1, .8, c2 * 5. + nc * 3. - 1.);
-
-    uv_h -= vec2(0.5);
-    uv_h *= 1. - u_progressHover * 0.1;
-    uv_h += vec2(0.5);
-
-    uv_h *= u_hoverratio;
-
-    uv -= vec2(0.5);
-    uv *= 1. - u_progressHover * 0.2;
-    uv += mouse * 0.1 * u_progressHover;
-    uv *= u_ratio;
-    uv += vec2(0.5);
-
-    vec4 color = vec4(0.0314, 0.0314, 0.2235, 1.);
-
-    vec4 image = texture2D(u_map, uv);
-    vec4 hover = texture2D(u_hovermap, uv_h + vec2(nh) * progressHover * (1. - progress));
-    hover = mix(hover, color * hover, .8 * (1. - progress));
-
-    float finalMask = smoothstep(.0, .1, sqr - c);
-
-    image = mix(image, hover, clamp(c2 + progress, 0., 1.));
-
-    gl_FragColor = vec4(image.rgb, u_alpha * finalMask);
-  }
-`
-
-
-
-// R3F implementation removed; using raw Three.js in the Page component below.
-
 export default function Page() {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null)
+  const imgRef = React.useRef<HTMLImageElement | null>(null)
+  const containerRef = React.useRef<HTMLDivElement | null>(null)
+  const [controls, setControls] = React.useState({
+    radius: 0.10,
+    blur: 2.0,
+    circleBoost: 2.5,
+    noiseFreq: 8.0,
+    noiseStrength: 0.6,
+    timeSpeed: 0.1,
+    imageScale: 1.05,
+    distortAmp: 0.02,
+    distortFreq: 6.0,
+  })
+  const controlsRef = React.useRef(controls)
+  React.useEffect(() => { controlsRef.current = controls }, [controls])
+  const uniformsRef = React.useRef<any>(null)
 
-  useEffect(() => {
-    const container = containerRef.current
+  React.useEffect(() => {
     const canvas = canvasRef.current
-    if (!container || !canvas) return
+    const imgEl = imgRef.current
+    if (!canvas || !imgEl) return
 
+    // Scene setup
+    const scene = new THREE.Scene()
+    const perspective = 800
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.setSize(container.clientWidth, container.clientHeight, false)
+    renderer.setSize(window.innerWidth, window.innerHeight)
 
-    const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0x222222) // Dark gray background
-    
-    // Simplified camera setup - closer and simpler
-    const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000)
-    camera.position.set(0, 0, 5) // Much closer to the scene
-    
-    // Add basic lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.0)
-    scene.add(ambientLight)
-    
-    console.log('Scene created, camera position:', camera.position)
-    console.log('Camera FOV:', 45)
-
-    const geometry = new THREE.PlaneGeometry(1, 1, 1, 1)
-    const raycaster = new THREE.Raycaster()
-    const pointerNDC = new THREE.Vector2()
+    const computeFov = () => (180 * (2 * Math.atan(window.innerHeight / 2 / perspective))) / Math.PI
+    const camera = new THREE.PerspectiveCamera(computeFov(), window.innerWidth / window.innerHeight, 1, 5000)
+    camera.position.set(0, 0, perspective)
 
     const loader = new THREE.TextureLoader()
-    const baseURL = '/random-assets/profile-image.png'
-    const hoverURL = '/random-assets/blue-profile-image.png'
-
-    const makeFallbackTexture = (r: number, g: number, b: number) => {
-      const data = new Uint8Array([r, g, b, 255])
-      const tex = new THREE.DataTexture(data, 1, 1)
-      tex.needsUpdate = true
-      return tex
+    const baseSrc = imgEl.getAttribute('src') || '/random-assets/profile-image.png'
+    const hoverSrc = imgEl.getAttribute('data-hover') || '/random-assets/blue-profile-image.png'
+    const baseTexture = loader.load(baseSrc, (tex) => {
+      const w = (tex.image && tex.image.width) || 1
+      const h = (tex.image && tex.image.height) || 1
+      if (uniformsRef.current) uniformsRef.current.u_texResBase.value.set(w, h)
+    })
+    const hoverTexture = loader.load(hoverSrc, (tex) => {
+      const w = (tex.image && tex.image.width) || 1
+      const h = (tex.image && tex.image.height) || 1
+      if (uniformsRef.current) uniformsRef.current.u_texResHover.value.set(w, h)
+    })
+    // Color space for modern three versions
+    // @ts-ignore - guard older versions
+    if ((THREE as any).SRGBColorSpace) {
+      // @ts-ignore
+      baseTexture.colorSpace = THREE.SRGBColorSpace
+      // @ts-ignore
+      hoverTexture.colorSpace = THREE.SRGBColorSpace
     }
+    baseTexture.minFilter = THREE.LinearFilter
+    hoverTexture.minFilter = THREE.LinearFilter
 
-    const loadTexture = (url: string, fallbackColor: [number, number, number]) =>
-      new Promise<THREE.Texture>((resolve) => {
-        loader.load(
-          url,
-          (tex) => {
-            tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping
-            tex.needsUpdate = true
-            resolve(tex)
-          },
-          undefined,
-          () => {
-            console.warn('Texture failed to load, using fallback:', url)
-            resolve(makeFallbackTexture(...fallbackColor))
-          }
-        )
-      })
-
-    let material: THREE.Material | null = null
-    let mesh: THREE.Mesh | null = null
-
-    const uniforms = {
-      u_map: { value: null as unknown as THREE.Texture },
-      u_hovermap: { value: null as unknown as THREE.Texture },
-      u_alpha: { value: 1.0 },
+    const uniforms: { [key: string]: THREE.IUniform } = {
       u_time: { value: 0 },
-      u_progressHover: { value: 1.0 },
-      u_progressClick: { value: 0.0 },
-      u_res: { value: new THREE.Vector2(1, 1) },
+      u_image: { value: baseTexture },
+      u_imagehover: { value: hoverTexture },
       u_mouse: { value: new THREE.Vector2(0.5, 0.5) },
-      u_ratio: { value: new THREE.Vector2(1, 1) },
-      u_hoverratio: { value: new THREE.Vector2(1, 1) },
+      u_progress: { value: 0 },
+      u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+      u_res: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
+      u_pr: { value: Math.min(window.devicePixelRatio || 1, 2) },
+      u_planeRes: { value: new THREE.Vector2(1, 1) },
+      u_radius: { value: controlsRef.current.radius },
+      u_blur: { value: controlsRef.current.blur },
+      u_circleBoost: { value: controlsRef.current.circleBoost },
+      u_noiseFreq: { value: controlsRef.current.noiseFreq },
+      u_noiseStrength: { value: controlsRef.current.noiseStrength },
+      u_timeSpeed: { value: controlsRef.current.timeSpeed },
+      u_scaleMax: { value: controlsRef.current.imageScale },
+      u_distortAmp: { value: controlsRef.current.distortAmp },
+      u_distortFreq: { value: controlsRef.current.distortFreq },
+      u_texResBase: { value: new THREE.Vector2(1, 1) },
+      u_texResHover: { value: new THREE.Vector2(1, 1) },
     }
+    uniformsRef.current = uniforms
 
-              const setup = async () => {
-      try {
-        console.log('Loading textures...')
-        const [baseTex, hoverTex] = await Promise.all([
-          loadTexture(baseURL, [30, 30, 60]),
-          loadTexture(hoverURL, [200, 120, 120]),
-        ])
-        console.log('Textures loaded:', baseTex, hoverTex)
-        
-        uniforms.u_map.value = baseTex
-        uniforms.u_hovermap.value = hoverTex
+    const vertexShader = `
+      varying vec2 vUv;
+      void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `
 
-        const planeWidth = 8.0  // Much larger plane
-        const planeHeight = 6.0  // Much larger plane
+    // Simplex noise (3D) adapted for GLSL1
+    const fragmentShader = `
+      precision highp float;
+      varying vec2 vUv;
+      uniform float u_time;
+      uniform sampler2D u_image;
+      uniform sampler2D u_imagehover;
+      uniform vec2 u_mouse;
+      uniform float u_progress;
+      uniform vec2 u_res;
+      uniform float u_pr;
+      uniform vec2 u_planeRes;
+      uniform float u_radius;
+      uniform float u_blur;
+      uniform float u_circleBoost;
+      uniform float u_noiseFreq;
+      uniform float u_noiseStrength;
+      uniform float u_timeSpeed;
+      uniform float u_scaleMax;
+      uniform float u_distortAmp;
+      uniform float u_distortFreq;
+      uniform vec2 u_texResBase;
+      uniform vec2 u_texResHover;
 
-        // Try shader material first, fallback to basic material if it fails
-        try {
-          material = new THREE.ShaderMaterial({
-            uniforms,
-            vertexShader,
-            fragmentShader: gooeyFragmentShader,
-            transparent: true,
-          })
-          console.log('Shader material created successfully')
-        } catch (shaderError) {
-          console.error('Shader material failed, using fallback:', shaderError)
-          material = new THREE.MeshBasicMaterial({ 
-            map: baseTex,
-            transparent: true,
-            opacity: 0.8
-          })
+      // Simplex noise 3D from https://github.com/ashima/webgl-noise
+      vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+      vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+      vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
+      vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+      float snoise(vec3 v) {
+        const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
+        const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
+        // First corner
+        vec3 i  = floor(v + dot(v, C.yyy));
+        vec3 x0 = v - i + dot(i, C.xxx);
+
+        // Other corners
+        vec3 g = step(x0.yzx, x0.xyz);
+        vec3 l = 1.0 - g;
+        vec3 i1 = min( g.xyz, l.zxy );
+        vec3 i2 = max( g.xyz, l.zxy );
+
+        //  x0 = x0 - 0.0 + 0.0 * C.xxx;
+        //  x1 = x0 - i1  + 1.0 * C.xxx;
+        //  x2 = x0 - i2  + 2.0 * C.xxx;
+        //  x3 = x0 - 1.0 + 3.0 * C.xxx;
+        vec3 x1 = x0 - i1 + C.xxx;
+        vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y
+        vec3 x3 = x0 - D.yyy;      // -1.0 + 3.0 * C.x = -0.5 = -D.y
+
+        // Permutations
+        i = mod289(i);
+        vec4 p = permute( permute( permute(
+                   i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
+                 + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))
+                 + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
+
+        // Gradients: 7x7 points over a square, mapped onto an octahedron.
+        float n_ = 0.142857142857; // 1.0/7.0
+        vec3  ns = n_ * D.wyz - D.xzx;
+
+        vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  // mod(p,7*7)
+
+        vec4 x_ = floor(j * ns.z);
+        vec4 y_ = floor(j - 7.0 * x_ );
+
+        vec4 x = x_ *ns.x + ns.yyyy;
+        vec4 y = y_ *ns.x + ns.yyyy;
+        vec4 h = 1.0 - abs(x) - abs(y);
+
+        vec4 b0 = vec4( x.xy, y.xy );
+        vec4 b1 = vec4( x.zw, y.zw );
+
+        vec4 s0 = floor(b0)*2.0 + 1.0;
+        vec4 s1 = floor(b1)*2.0 + 1.0;
+        vec4 sh = -step(h, vec4(0.0));
+
+        vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
+        vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
+
+        vec3 p0 = vec3(a0.xy,h.x);
+        vec3 p1 = vec3(a0.zw,h.y);
+        vec3 p2 = vec3(a1.xy,h.z);
+        vec3 p3 = vec3(a1.zw,h.w);
+
+        // Normalise gradients
+        vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+        p0 *= norm.x;
+        p1 *= norm.y;
+        p2 *= norm.z;
+        p3 *= norm.w;
+
+        // Mix final noise value
+        vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+        m = m * m;
+        return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1),
+                                      dot(p2,x2), dot(p3,x3) ) );
+      }
+
+      // Tutorial circle implementation in centered coordinates
+      float circle_tutorial(vec2 _st, float _radius, float blurriness){
+        vec2 dist = _st;
+        return 1.0 - smoothstep(
+          _radius - (_radius * blurriness),
+          _radius + (_radius * blurriness),
+          dot(dist, dist) * 4.0
+        );
+      }
+
+      void main() {
+        // Texture coordinates
+        // Distortion (small flow field) on UVs for both textures
+        vec2 uv = vUv;
+        float d1 = snoise(vec3(uv * u_distortFreq, u_time * 0.25));
+        float d2 = snoise(vec3((uv + 10.0) * (u_distortFreq * 0.7), u_time * 0.23));
+        vec2 flow = vec2(d1, d2) * u_distortAmp * u_progress;
+        vec2 uvDistorted = uv + flow;
+
+        // Plane-centered coordinates (match tutorial logic but in local plane space)
+        // Rebuild st from the distorted UVs so the gooey mask is also affected
+        vec2 st = vUv - vec2(0.5);
+        st.y *= u_planeRes.y / u_planeRes.x;
+        vec2 stDist = uvDistorted - vec2(0.5);
+        stDist.y *= u_planeRes.y / u_planeRes.x;
+
+        // Adjust mouse to plane-centered/aspect-corrected coords
+        vec2 mouse = (u_mouse - vec2(0.5));
+        mouse.y *= u_planeRes.y / u_planeRes.x;
+        mouse *= -1.0;
+
+        vec2 circlePos = stDist + mouse;
+
+        // Animated noise with lateral (left-right) drift
+        float offx = uvDistorted.x + (u_time * 0.1) + sin(uvDistorted.y + u_time * 0.1);
+        float offy = uvDistorted.y - cos(u_time * 0.001) * 0.01;
+        float n = snoise(vec3(offx, offy, u_time * u_timeSpeed) * u_noiseFreq) - 1.0;
+
+        // Circle and merge using the tutorial's parameters
+        float c = circle_tutorial(circlePos, u_radius, u_blur) * u_circleBoost * u_progress;
+        float finalMask = smoothstep(0.4, 0.5, (n * u_noiseStrength) + pow(c, 2.0));
+
+        // Subtle scale on hover image
+        vec2 center = vec2(0.5);
+        float scale = mix(1.0, u_scaleMax, u_progress);
+        vec2 uvScaled = (uvDistorted - center) / scale + center;
+
+        // cover-fit UVs (center-crop to square plane)
+        vec2 coverBase;
+        {
+          float planeRatio = u_planeRes.x / u_planeRes.y;
+          float texRatio = u_texResBase.x / u_texResBase.y;
+          vec2 s = vec2(1.0);
+          if (texRatio > planeRatio) {
+            s.x = texRatio / planeRatio;
+          } else {
+            s.y = planeRatio / texRatio;
+          }
+          coverBase = (uvDistorted - 0.5) * s + 0.5;
         }
-        
-
-
-        mesh = new THREE.Mesh(geometry, material)
-        mesh.scale.set(planeWidth, planeHeight, 1)
-        scene.add(mesh)
-        
-        console.log('Mesh added to scene:', mesh)
-        console.log('Scene children count:', scene.children.length)
-      } catch (error) {
-        console.error('Setup error:', error)
-      }
-    }
-
-    const updateResolutionUniform = () => {
-      const dpr = renderer.getPixelRatio()
-      const w = container.clientWidth * dpr
-      const h = container.clientHeight * dpr
-      uniforms.u_res.value.set(w, h)
-      // compute image cover ratios similar to reference to avoid distortion
-      if (uniforms.u_map.value) {
-        const tex = uniforms.u_map.value as THREE.Texture
-        const iw = tex.image?.width || 1
-        const ih = tex.image?.height || 1
-        const containerRatio = w / h
-        const imageRatio = iw / ih
-        const coverX = containerRatio > imageRatio ? containerRatio / imageRatio : 1.0
-        const coverY = containerRatio > imageRatio ? 1.0 : imageRatio / containerRatio
-        uniforms.u_ratio.value.set(coverX, coverY)
-        uniforms.u_hoverratio.value.set(coverX, coverY)
-      }
-    }
-
-    const onPointerMove = (e: PointerEvent) => {
-      const rect = container.getBoundingClientRect()
-      const x = e.clientX - rect.left
-      const y = e.clientY - rect.top
-      const dpr = renderer.getPixelRatio()
-      
-      // Debug mouse coordinates
-      console.log('Mouse position:', { clientX: e.clientX, clientY: e.clientY, rect: { left: rect.left, top: rect.top } })
-      console.log('Relative position:', { x, y })
-      
-      // Update mouse in pixel coordinates (shader expects pixels)
-      if (material && 'uniforms' in material) {
-        const shaderMaterial = material as THREE.ShaderMaterial
-        if (shaderMaterial.uniforms && shaderMaterial.uniforms.u_mouse) {
-          shaderMaterial.uniforms.u_mouse.value.set(x * dpr, y * dpr)
-          console.log('Updated mouse uniform (pixels):', x * dpr, y * dpr)
+        vec2 coverHover;
+        {
+          float planeRatio = u_planeRes.x / u_planeRes.y;
+          float texRatio = u_texResHover.x / u_texResHover.y;
+          vec2 s = vec2(1.0);
+          if (texRatio > planeRatio) {
+            s.x = texRatio / planeRatio;
+          } else {
+            s.y = planeRatio / texRatio;
+          }
+          coverHover = (uvScaled - 0.5) * s + 0.5;
         }
-      }
-    }
-    const onResize = () => {
-      const wCss = container.clientWidth
-      const hCss = container.clientHeight
-      renderer.setSize(wCss, hCss, false)
-      camera.aspect = wCss / hCss
-      camera.updateProjectionMatrix()
-      updateResolutionUniform()
-    }
 
-    container.addEventListener('pointermove', onPointerMove)
-    let resizeObserver: ResizeObserver | null = null
-    if (typeof ResizeObserver !== 'undefined') {
-      resizeObserver = new ResizeObserver(onResize)
-      resizeObserver.observe(container)
-    } else {
-      window.addEventListener('resize', onResize)
-    }
+        vec4 img = texture2D(u_image, coverBase);
+        vec4 hover = texture2D(u_imagehover, coverHover);
+        vec4 color = mix(img, hover, finalMask);
+        gl_FragColor = color;
+      }
+    `
 
-    let raf = 0
-    const tick = () => {
-      raf = requestAnimationFrame(tick)
-      if (material && 'uniforms' in material) {
-        const shaderMaterial = material as THREE.ShaderMaterial
-        if (shaderMaterial.uniforms && shaderMaterial.uniforms.u_time) {
-          shaderMaterial.uniforms.u_time.value += 0.016
-        }
-      }
-      
-      // Debug: log scene state
-      if (scene.children.length > 0) {
-        console.log('Rendering frame, scene children:', scene.children.length)
-      }
-      
+    const geometry = new THREE.PlaneGeometry(1, 1, 1, 1)
+    const material = new THREE.ShaderMaterial({
+      uniforms,
+      vertexShader,
+      fragmentShader,
+      transparent: true,
+    })
+    const mesh = new THREE.Mesh(geometry, material)
+    scene.add(mesh)
+
+    const sizes = new THREE.Vector2()
+    const offset = new THREE.Vector2()
+
+    const updateFromDOM = () => {
+      const rect = imgEl.getBoundingClientRect()
+      sizes.set(rect.width, rect.height)
+      offset.set(
+        rect.left + rect.width / 2 - window.innerWidth / 2,
+        -(rect.top + rect.height / 2 - window.innerHeight / 2)
+      )
+      mesh.position.set(offset.x, offset.y, 0)
+      mesh.scale.set(sizes.x, sizes.y, 1)
+      uniforms.u_planeRes.value.set(rect.width, rect.height)
+    }
+    updateFromDOM()
+
+    let targetProgress = 0
+    let rafId = 0
+    const clock = new THREE.Clock()
+
+    const render = () => {
+      rafId = requestAnimationFrame(render)
+      uniforms.u_time.value += clock.getDelta()
+      // Sync UI-controlled uniforms each frame (read from ref to avoid stale closure)
+      const c = controlsRef.current
+      uniforms.u_radius.value = c.radius
+      uniforms.u_blur.value = c.blur
+      uniforms.u_circleBoost.value = c.circleBoost
+      uniforms.u_noiseFreq.value = c.noiseFreq
+      uniforms.u_noiseStrength.value = c.noiseStrength
+      uniforms.u_timeSpeed.value = c.timeSpeed
+      uniforms.u_scaleMax.value = c.imageScale
+      uniforms.u_distortAmp.value = c.distortAmp
+      uniforms.u_distortFreq.value = c.distortFreq
+      // ease progress
+      uniforms.u_progress.value += (targetProgress - uniforms.u_progress.value) * 0.08
       renderer.render(scene, camera)
     }
+    render()
 
-    ;(async () => {
-      try {
-        await setup()
-        updateResolutionUniform()
-        tick()
-      } catch (err) {
-        console.error('LiquidMask initialization failed:', err)
-      }
-    })()
+    const onResize = () => {
+      renderer.setSize(window.innerWidth, window.innerHeight)
+      camera.aspect = window.innerWidth / window.innerHeight
+      camera.fov = computeFov()
+      camera.updateProjectionMatrix()
+      uniforms.u_resolution.value.set(window.innerWidth, window.innerHeight)
+      uniforms.u_res.value.set(window.innerWidth, window.innerHeight)
+      uniforms.u_pr.value = Math.min(window.devicePixelRatio || 1, 2)
+      updateFromDOM()
+    }
+    window.addEventListener('resize', onResize)
+
+    const onMove = (e: MouseEvent) => {
+      const rect = imgEl.getBoundingClientRect()
+      const x = (e.clientX - rect.left) / rect.width
+      const y = 1 - (e.clientY - rect.top) / rect.height
+      uniforms.u_mouse.value.set(
+        Math.max(0.0, Math.min(1.0, x)),
+        Math.max(0.0, Math.min(1.0, y))
+      )
+    }
+    const onEnter = () => { targetProgress = 1 }
+    const onLeave = () => { targetProgress = 0 }
+
+    imgEl.addEventListener('mousemove', onMove)
+    imgEl.addEventListener('mouseenter', onEnter)
+    imgEl.addEventListener('mouseleave', onLeave)
 
     return () => {
-      cancelAnimationFrame(raf)
-      if (resizeObserver) {
-        resizeObserver.disconnect()
-      } else {
-        window.removeEventListener('resize', onResize)
-      }
-      container.removeEventListener('pointermove', onPointerMove)
-      if (mesh) {
-        scene.remove(mesh)
-        mesh.geometry.dispose()
-        if (Array.isArray(mesh.material)) {
-          mesh.material.forEach((m) => m.dispose())
-        } else {
-          ;(mesh.material as THREE.Material).dispose()
-        }
-      }
+      cancelAnimationFrame(rafId)
+      window.removeEventListener('resize', onResize)
+      imgEl.removeEventListener('mousemove', onMove)
+      imgEl.removeEventListener('mouseenter', onEnter)
+      imgEl.removeEventListener('mouseleave', onLeave)
+      geometry.dispose()
+      material.dispose()
+      baseTexture.dispose()
+      hoverTexture.dispose()
       renderer.dispose()
     }
   }, [])
 
   return (
-    <div
-      ref={containerRef}
-      style={{ width: '100%', height: '100vh', padding:"120px 400px", background: '#05051c', position: 'relative' }}
-    >
-      <canvas ref={canvasRef} style={{ width: '100%', zIndex:1000, height: '100%', display: 'block' }} />
-      <div style={{ position: 'absolute', top: 20, left: 20, color: 'white', opacity: 0.7, fontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif' }}>
-        Hover to reveal, click to intensify
+    <div ref={containerRef} className="page">
+      <section className="container">
+        <article className="tile">
+          <figure className="tile__figure">
+            <img
+              ref={imgRef}
+              src="/random-assets/profile-image.png"
+              data-hover="/random-assets/image-copy.png"
+              className="tile__image"
+              alt="Profile"
+            />
+          </figure>
+        </article>
+      </section>
+      <canvas ref={canvasRef} id="stage" />
+      <div className="ui">
+        <h4>Gooey Controls</h4>
+        <label>
+          Radius: {controls.radius.toFixed(3)}
+          <input type="range" min={0.02} max={0.35} step={0.005}
+            value={controls.radius}
+            onChange={(e) => setControls(c => ({ ...c, radius: parseFloat(e.target.value) }))} />
+        </label>
+        <label>
+          Blur: {controls.blur.toFixed(2)}
+          <input type="range" min={0.2} max={3.0} step={0.05}
+            value={controls.blur}
+            onChange={(e) => setControls(c => ({ ...c, blur: parseFloat(e.target.value) }))} />
+        </label>
+        <label>
+          Circle Boost: {controls.circleBoost.toFixed(2)}
+          <input type="range" min={0.5} max={4.0} step={0.05}
+            value={controls.circleBoost}
+            onChange={(e) => setControls(c => ({ ...c, circleBoost: parseFloat(e.target.value) }))} />
+        </label>
+        <label>
+          Noise Freq: {controls.noiseFreq.toFixed(2)}
+          <input type="range" min={2.0} max={16.0} step={0.25}
+            value={controls.noiseFreq}
+            onChange={(e) => setControls(c => ({ ...c, noiseFreq: parseFloat(e.target.value) }))} />
+        </label>
+        <label>
+          Noise Strength: {controls.noiseStrength.toFixed(2)}
+          <input type="range" min={0.0} max={3.0} step={0.02}
+            value={controls.noiseStrength}
+            onChange={(e) => setControls(c => ({ ...c, noiseStrength: parseFloat(e.target.value) }))} />
+        </label>
+        <label>
+          Time Speed: {controls.timeSpeed.toFixed(2)}
+          <input type="range" min={0.02} max={5.6} step={0.01}
+            value={controls.timeSpeed}
+            onChange={(e) => setControls(c => ({ ...c, timeSpeed: parseFloat(e.target.value) }))} />
+        </label>
+        <label>
+          Image Scale: {controls.imageScale.toFixed(2)}
+          <input type="range" min={1.0} max={1.5} step={0.01}
+            value={controls.imageScale}
+            onChange={(e) => setControls(c => ({ ...c, imageScale: parseFloat(e.target.value) }))} />
+        </label>
+        <label>
+          Distort Amp: {controls.distortAmp.toFixed(3)}
+          <input type="range" min={0.0} max={0.08} step={0.002}
+            value={controls.distortAmp}
+            onChange={(e) => setControls(c => ({ ...c, distortAmp: parseFloat(e.target.value) }))} />
+        </label>
+        <label>
+          Distort Freq: {controls.distortFreq.toFixed(1)}
+          <input type="range" min={1.0} max={14.0} step={0.5}
+            value={controls.distortFreq}
+            onChange={(e) => setControls(c => ({ ...c, distortFreq: parseFloat(e.target.value) }))} />
+        </label>
       </div>
+      <style jsx>{`
+        .container {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          height: 100vh;
+          z-index: 10;
+          position: relative;
+        }
+        .tile { width: 35vw; max-width: 560px; flex: 0 0 auto; }
+        /* Keep the DOM image for sizing and mouse events, but make it invisible so the canvas is visible */
+        .tile__image { width: 100%; aspect-ratio: 1 / 1; height: auto; object-fit: cover; object-position: center; display:block; opacity: 0; }
+        #stage { position: fixed; left: 0; top: 0; width: 100%; height: 100vh; z-index: 9; pointer-events: none; }
+        .ui { position: fixed; right: 16px; top: 16px; z-index: 20; background: rgba(20,20,20,0.75); color: #fff; padding: 12px 14px; border-radius: 8px; width: 260px; font-family: ui-sans-serif, system-ui, -apple-system; }
+        .ui h4 { margin: 0 0 8px; font-weight: 600; font-size: 13px; letter-spacing: .02em; opacity: .9; }
+        .ui label { display: block; font-size: 12px; margin: 8px 0; }
+        .ui input[type="range"] { width: 100%; }
+      `}</style>
     </div>
   )
 }

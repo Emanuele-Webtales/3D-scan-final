@@ -1,13 +1,14 @@
 'use client'
 
-import * as React from 'react'
-import * as THREE from 'three'
+import React, { useRef, useEffect, useState } from 'react'
+
+import { Scene, PerspectiveCamera, WebGLRenderer, PlaneGeometry, Mesh, ShaderMaterial, Vector2, LinearFilter, SRGBColorSpace, Clock, TextureLoader, IUniform } from 'three'
 
 export default function Page() {
-  const canvasRef = React.useRef<HTMLCanvasElement | null>(null)
-  const imgRef = React.useRef<HTMLImageElement | null>(null)
-  const containerRef = React.useRef<HTMLDivElement | null>(null)
-  const [controls, setControls] = React.useState({
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const imgRef = useRef<HTMLImageElement | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const [controls, setControls] = useState({
     radius: 0.10,
     blur: 2.0,
     circleBoost: 2.5,
@@ -18,72 +19,72 @@ export default function Page() {
     distortAmp: 0.02,
     distortFreq: 6.0,
   })
-  const controlsRef = React.useRef(controls)
-  React.useEffect(() => { controlsRef.current = controls }, [controls])
-  const uniformsRef = React.useRef<any>(null)
+  const controlsRef = useRef(controls)
+  useEffect(() => { controlsRef.current = controls }, [controls])
+  const uniformsRef = useRef<any>(null)
 
-  React.useEffect(() => {
+  useEffect(() => {
     const canvas = canvasRef.current
     const imgEl = imgRef.current
     if (!canvas || !imgEl) return
 
     // Scene setup
-    const scene = new THREE.Scene()
+    const scene = new Scene()
     const perspective = 800
-    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true })
+    const renderer = new WebGLRenderer({ canvas, alpha: true, antialias: true })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
     renderer.setSize(window.innerWidth, window.innerHeight)
 
     const computeFov = () => (180 * (2 * Math.atan(window.innerHeight / 2 / perspective))) / Math.PI
-    const camera = new THREE.PerspectiveCamera(computeFov(), window.innerWidth / window.innerHeight, 1, 5000)
+    const camera = new PerspectiveCamera(computeFov(), window.innerWidth / window.innerHeight, 1, 5000)
     camera.position.set(0, 0, perspective)
 
-    const loader = new THREE.TextureLoader()
+    const loader = new TextureLoader()
     const baseSrc = imgEl.getAttribute('src') || '/random-assets/profile-image.png'
     const hoverSrc = imgEl.getAttribute('data-hover') || '/random-assets/blue-profile-image.png'
-    const baseTexture = loader.load(baseSrc, (tex) => {
-      const w = (tex.image && tex.image.width) || 1
-      const h = (tex.image && tex.image.height) || 1
-      if (uniformsRef.current) uniformsRef.current.u_texResBase.value.set(w, h)
-    })
-    const hoverTexture = loader.load(hoverSrc, (tex) => {
-      const w = (tex.image && tex.image.width) || 1
-      const h = (tex.image && tex.image.height) || 1
-      if (uniformsRef.current) uniformsRef.current.u_texResHover.value.set(w, h)
-    })
+    const baseTexture = loader.load(baseSrc, (tex : any) => {
+        const w = (tex.image && tex.image.width) || 1
+        const h = (tex.image && tex.image.height) || 1
+        if (uniformsRef.current?.u_texResBase?.value) uniformsRef.current.u_texResBase.value.set(w, h)
+      })
+      const hoverTexture = loader.load(hoverSrc, (tex : any) => {
+        const w = (tex.image && tex.image.width) || 1
+        const h = (tex.image && tex.image.height) || 1
+        if (uniformsRef.current?.u_texResHover?.value) uniformsRef.current.u_texResHover.value.set(w, h)
+      })
     // Color space for modern three versions
     // @ts-ignore - guard older versions
-    if ((THREE as any).SRGBColorSpace) {
+    if (SRGBColorSpace) {
       // @ts-ignore
-      baseTexture.colorSpace = THREE.SRGBColorSpace
+      baseTexture.colorSpace = SRGBColorSpace
       // @ts-ignore
-      hoverTexture.colorSpace = THREE.SRGBColorSpace
+      hoverTexture.colorSpace = SRGBColorSpace
     }
-    baseTexture.minFilter = THREE.LinearFilter
-    hoverTexture.minFilter = THREE.LinearFilter
+    baseTexture.minFilter = LinearFilter
+    hoverTexture.minFilter = LinearFilter
 
-    const uniforms: { [key: string]: THREE.IUniform } = {
-      u_time: { value: 0 },
-      u_image: { value: baseTexture },
-      u_imagehover: { value: hoverTexture },
-      u_mouse: { value: new THREE.Vector2(0.5, 0.5) },
-      u_progress: { value: 0 },
-      u_resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-      u_res: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
-      u_pr: { value: Math.min(window.devicePixelRatio || 1, 2) },
-      u_planeRes: { value: new THREE.Vector2(1, 1) },
-      u_radius: { value: controlsRef.current.radius },
-      u_blur: { value: controlsRef.current.blur },
-      u_circleBoost: { value: controlsRef.current.circleBoost },
-      u_noiseFreq: { value: controlsRef.current.noiseFreq },
-      u_noiseStrength: { value: controlsRef.current.noiseStrength },
-      u_timeSpeed: { value: controlsRef.current.timeSpeed },
-      u_scaleMax: { value: controlsRef.current.imageScale },
-      u_distortAmp: { value: controlsRef.current.distortAmp },
-      u_distortFreq: { value: controlsRef.current.distortFreq },
-      u_texResBase: { value: new THREE.Vector2(1, 1) },
-      u_texResHover: { value: new THREE.Vector2(1, 1) },
-    }
+    const uniforms: { [key: string]: IUniform } = {
+        u_time: { value: 0 },
+        u_image: { value: baseTexture },
+        u_imagehover: { value: hoverTexture },
+        u_mouse: { value: new Vector2(0.5, 0.5) },
+        u_progress: { value: 0 },
+        u_resolution: { value: new Vector2(window.innerWidth, window.innerHeight) },
+        u_res: { value: new Vector2(window.innerWidth, window.innerHeight) },
+        u_pr: { value: Math.min(window.devicePixelRatio || 1, 2) },
+        u_planeRes: { value: new Vector2(1, 1) },
+        u_radius: { value: controlsRef.current.radius },
+        u_blur: { value: controlsRef.current.blur },
+        u_circleBoost: { value: controlsRef.current.circleBoost },
+        u_noiseFreq: { value: controlsRef.current.noiseFreq },
+        u_noiseStrength: { value: controlsRef.current.noiseStrength },
+        u_timeSpeed: { value: controlsRef.current.timeSpeed },
+        u_scaleMax: { value: controlsRef.current.imageScale },
+        u_distortAmp: { value: 0.0 },         // keep defined, neutralized
+        u_distortFreq: { value: 0.0 },        // keep defined, unused
+        u_texResBase: { value: new Vector2(1, 1) },
+        u_texResHover: { value: new Vector2(1, 1) },
+      }
     uniformsRef.current = uniforms
 
     const vertexShader = `
@@ -113,8 +114,8 @@ export default function Page() {
       uniform float u_noiseStrength;
       uniform float u_timeSpeed;
       uniform float u_scaleMax;
-      uniform float u_distortAmp;
-      uniform float u_distortFreq;
+    //   uniform float u_distortAmp;
+    //   uniform float u_distortFreq;
       uniform vec2 u_texResBase;
       uniform vec2 u_texResHover;
 
@@ -207,10 +208,10 @@ export default function Page() {
         // Texture coordinates
         // Distortion (small flow field) on UVs for both textures
         vec2 uv = vUv;
-        float d1 = snoise(vec3(uv * u_distortFreq, u_time * 0.25));
-        float d2 = snoise(vec3((uv + 10.0) * (u_distortFreq * 0.7), u_time * 0.23));
-        vec2 flow = vec2(d1, d2) * u_distortAmp * u_progress;
-        vec2 uvDistorted = uv + flow;
+        // float d1 = snoise(vec3(uv * u_distortFreq, u_time * 0.25));
+        // float d2 = snoise(vec3((uv + 10.0) * (u_distortFreq * 0.7), u_time * 0.23));
+        // vec2 flow = vec2(d1, d2) * u_distortAmp * u_progress;
+        vec2 uvDistorted = uv;
 
         // Plane-centered coordinates (match tutorial logic but in local plane space)
         // Rebuild st from the distorted UVs so the gooey mask is also affected
@@ -226,10 +227,10 @@ export default function Page() {
 
         vec2 circlePos = stDist + mouse;
 
-        // Animated noise with lateral (left-right) drift
+         // Animated noise with lateral (left-right) drift
         float offx = uvDistorted.x + (u_time * 0.1) + sin(uvDistorted.y + u_time * 0.1);
         float offy = uvDistorted.y - cos(u_time * 0.001) * 0.01;
-        float n = snoise(vec3(offx, offy, u_time * u_timeSpeed) * u_noiseFreq) - 1.0;
+        float n = snoise(vec3(offx * u_noiseFreq, offy * u_noiseFreq, u_time * (u_timeSpeed * 0.1))) - 1.0;
 
         // Circle and merge using the tutorial's parameters
         float c = circle_tutorial(circlePos, u_radius, u_blur) * u_circleBoost * u_progress;
@@ -273,18 +274,18 @@ export default function Page() {
       }
     `
 
-    const geometry = new THREE.PlaneGeometry(1, 1, 1, 1)
-    const material = new THREE.ShaderMaterial({
+    const geometry = new PlaneGeometry(1, 1, 1, 1)
+    const material = new ShaderMaterial({
       uniforms,
       vertexShader,
       fragmentShader,
       transparent: true,
     })
-    const mesh = new THREE.Mesh(geometry, material)
+    const mesh = new Mesh(geometry, material)
     scene.add(mesh)
 
-    const sizes = new THREE.Vector2()
-    const offset = new THREE.Vector2()
+    const sizes = new Vector2()
+    const offset = new Vector2()
 
     const updateFromDOM = () => {
       const rect = imgEl.getBoundingClientRect()
@@ -301,26 +302,26 @@ export default function Page() {
 
     let targetProgress = 0
     let rafId = 0
-    const clock = new THREE.Clock()
+    const clock = new Clock()
 
     const render = () => {
-      rafId = requestAnimationFrame(render)
-      uniforms.u_time.value += clock.getDelta()
-      // Sync UI-controlled uniforms each frame (read from ref to avoid stale closure)
-      const c = controlsRef.current
-      uniforms.u_radius.value = c.radius
-      uniforms.u_blur.value = c.blur
-      uniforms.u_circleBoost.value = c.circleBoost
-      uniforms.u_noiseFreq.value = c.noiseFreq
-      uniforms.u_noiseStrength.value = c.noiseStrength
-      uniforms.u_timeSpeed.value = c.timeSpeed
-      uniforms.u_scaleMax.value = c.imageScale
-      uniforms.u_distortAmp.value = c.distortAmp
-      uniforms.u_distortFreq.value = c.distortFreq
-      // ease progress
-      uniforms.u_progress.value += (targetProgress - uniforms.u_progress.value) * 0.08
-      renderer.render(scene, camera)
-    }
+        rafId = requestAnimationFrame(render)
+        uniforms.u_time.value += clock.getDelta()
+        // Sync UI-controlled uniforms each frame (read from ref to avoid stale closure)
+        const c = controlsRef.current
+        uniforms.u_radius.value = c.radius
+        uniforms.u_blur.value = c.blur
+        uniforms.u_circleBoost.value = c.circleBoost
+        uniforms.u_noiseFreq.value = c.noiseFreq
+        uniforms.u_noiseStrength.value = c.noiseStrength
+        uniforms.u_timeSpeed.value = c.timeSpeed
+        uniforms.u_scaleMax.value = c.imageScale
+        // uniforms.u_distortAmp.value = c.distortAmp
+        // uniforms.u_distortFreq.value = c.distortFreq
+        // ease progress
+        uniforms.u_progress.value += (targetProgress - uniforms.u_progress.value) * 0.08
+        renderer.render(scene, camera)
+      }
     render()
 
     const onResize = () => {
@@ -373,7 +374,7 @@ export default function Page() {
             <img
               ref={imgRef}
               src="/random-assets/profile-image.png"
-              data-hover="/random-assets/image-copy.png"
+              data-hover="/random-assets/blue-profile-image.png"
               className="tile__image"
               alt="Profile"
             />
@@ -417,7 +418,7 @@ export default function Page() {
           Time Speed: {controls.timeSpeed.toFixed(2)}
           <input type="range" min={0.02} max={5.6} step={0.01}
             value={controls.timeSpeed}
-            onChange={(e) => setControls(c => ({ ...c, timeSpeed: parseFloat(e.target.value) }))} />
+            onChange={(e) => setControls(c => ({ ...c, timeSpeed: parseFloat(e.target.value)}))} />
         </label>
         <label>
           Image Scale: {controls.imageScale.toFixed(2)}
@@ -425,7 +426,7 @@ export default function Page() {
             value={controls.imageScale}
             onChange={(e) => setControls(c => ({ ...c, imageScale: parseFloat(e.target.value) }))} />
         </label>
-        <label>
+        {/* <label>
           Distort Amp: {controls.distortAmp.toFixed(3)}
           <input type="range" min={0.0} max={0.08} step={0.002}
             value={controls.distortAmp}
@@ -436,7 +437,7 @@ export default function Page() {
           <input type="range" min={1.0} max={14.0} step={0.5}
             value={controls.distortFreq}
             onChange={(e) => setControls(c => ({ ...c, distortFreq: parseFloat(e.target.value) }))} />
-        </label>
+        </label> */}
       </div>
       <style jsx>{`
         .container {

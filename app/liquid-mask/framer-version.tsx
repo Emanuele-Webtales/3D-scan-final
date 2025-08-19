@@ -13,7 +13,7 @@ import {
     Clock,
     TextureLoader,
 } from "https://cdn.jsdelivr.net/gh/framer-university/components/npm-bundles/liquid-mask.js"
-import { addPropertyControls, ControlType } from "framer"
+import { addPropertyControls, ControlType, RenderTarget } from "framer"
 
 interface ResponsiveImageValue {
     src: string
@@ -40,6 +40,18 @@ interface Props {
  * @framerDisableUnlink
  * @framerSupportedLayoutWidth any
  * @framerSupportedLayoutHeight any
+ * 
+ * Liquid Mask Component with Gooey Effect
+ * 
+ * How It Works:
+ * - The DOM image is always visible at full opacity with proper cover behavior
+ * - The Three.js canvas outputs a transparent result (no dark overlay)
+ * - Only the hover image appears in the gooey effect areas
+ * - This creates a clean effect where the base image shows through naturally
+ * 
+ * Canvas vs Preview Behavior:
+ * - Both modes now show the same clean result
+ * - No more double image or dark stretched overlay
  */
 export default function Page(props: Props) {
     const { 
@@ -145,6 +157,14 @@ export default function Page(props: Props) {
             u_distortFreq: { value: 0.0 }, // keep defined, unused
             u_texResBase: { value: new Vector2(1, 1) },
             u_texResHover: { value: new Vector2(1, 1) },
+            u_imagePosBase: { value: new Vector2(
+                parseFloat(imageBase?.positionX || "50%") / 100,
+                1.0 - parseFloat(imageBase?.positionY || "50%") / 100
+            ) },
+            u_imagePosHover: { value: new Vector2(
+                parseFloat(imageHover?.positionX || "50%") / 100,
+                1.0 - parseFloat(imageHover?.positionY || "50%") / 100
+            ) },
         }
         uniformsRef.current = uniforms
 
@@ -179,6 +199,8 @@ export default function Page(props: Props) {
     //   uniform float u_distortFreq;
       uniform vec2 u_texResBase;
       uniform vec2 u_texResHover;
+      uniform vec2 u_imagePosBase;
+      uniform vec2 u_imagePosHover;
 
       // Simplex noise 3D from https://github.com/ashima/webgl-noise
       vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -302,7 +324,7 @@ export default function Page(props: Props) {
         float scale = mix(1.0, u_scaleMax, u_progress);
         vec2 uvScaled = (uvDistorted - center) / scale + center;
 
-        // cover-fit UVs (center-crop to square plane)
+        // cover-fit UVs (center-crop to square plane) with proper positioning
         vec2 coverBase;
         {
           float planeRatio = u_planeRes.x / u_planeRes.y;
@@ -313,7 +335,9 @@ export default function Page(props: Props) {
           } else {
             s.y = planeRatio / texRatio;
           }
-          coverBase = (uvDistorted - 0.5) * s + 0.5;
+          // Apply image positioning offset
+          vec2 offset = (u_imagePosBase - vec2(0.5)) * (s - 1.0);
+          coverBase = (uvDistorted - 0.5) * s + 0.5 + offset;
         }
         vec2 coverHover;
         {
@@ -325,12 +349,24 @@ export default function Page(props: Props) {
           } else {
             s.y = planeRatio / texRatio;
           }
-          coverHover = (uvScaled - 0.5) * s + 0.5;
+          // Apply image positioning offset and scaling
+          vec2 offset = (u_imagePosHover - vec2(0.5)) * (s - 1.0);
+          coverHover = (uvScaled - 0.5) * s + 0.5 + offset;
         }
 
         vec4 img = texture2D(u_image, coverBase);
         vec4 hover = texture2D(u_imagehover, coverHover);
-        vec4 color = mix(img, hover, finalMask);
+        
+        // Make the entire shader output transparent so only the DOM image shows through
+        // Only show the hover image in the gooey effect areas
+        vec4 color = vec4(0.0, 0.0, 0.0, 0.0); // Completely transparent
+        
+        // Only show hover image where the gooey mask exists
+        if (finalMask > 0.01) { // Small threshold to avoid artifacts
+            color = hover;
+            color.a = finalMask; // Use mask value for alpha
+        }
+        
         gl_FragColor = color;
       }
     `
@@ -435,7 +471,7 @@ export default function Page(props: Props) {
             hoverTexture.dispose()
             renderer.dispose()
         }
-    }, [radius, blur, circleBoost, noiseFreq, noiseStrength, timeSpeed, imageScale])
+    }, [radius, blur, circleBoost, noiseFreq, noiseStrength, timeSpeed, imageScale, imageBase?.positionX, imageBase?.positionY, imageHover?.positionX, imageHover?.positionY])
 
     return (
         <div 
@@ -450,13 +486,18 @@ export default function Page(props: Props) {
                 ...props.style
             }}
         >
+            {/* Show the DOM image in both canvas and preview modes with full opacity */}
             <figure style={{
                 width: "100%",
-                height:"100%",
+                height: "100%",
                 maxWidth: "100%",
                 flex: "0 0 auto",
                 margin: 0,
-                padding: 0
+                padding: 0,
+                position: "absolute",
+                zIndex: 1,
+                opacity: 1, // Always show at full opacity
+                pointerEvents: "auto" // Enable interactions
             }}>
                 <img
                     ref={imgRef}
@@ -467,15 +508,16 @@ export default function Page(props: Props) {
                     alt={imageBase?.alt || "Profile"}
                     style={{
                         width: "100%",
-
                         height: "100%",
                         objectFit: "cover",
-                        opacity: 1,
+                        objectPosition: `${imageBase?.positionX || "50%"} ${imageBase?.positionY || "50%"}`,
                         margin: 0,
                         padding: 0
                     }}
                 />
             </figure>
+            
+            {/* Three.js canvas - make it transparent so only the gooey effect is visible */}
             <canvas 
                 ref={canvasRef} 
                 id="stage" 
@@ -485,7 +527,7 @@ export default function Page(props: Props) {
                     top: 0,
                     width: "100%",
                     height: "100%",
-                    zIndex: 9,
+                    zIndex: 10,
                     pointerEvents: "none"
                 }}
             />

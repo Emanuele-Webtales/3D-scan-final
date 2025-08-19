@@ -112,14 +112,18 @@ export default function Page(props: Props) {
         const baseTexture = loader.load(baseSrc, (tex: any) => {
             const w = (tex.image && tex.image.width) || 1
             const h = (tex.image && tex.image.height) || 1
-            if (uniformsRef.current?.u_texResBase?.value)
+            if (uniformsRef.current?.u_texResBase?.value) {
                 uniformsRef.current.u_texResBase.value.set(w, h)
+                console.log('Base texture loaded:', w, h)
+            }
         })
         const hoverTexture = loader.load(hoverSrc, (tex: any) => {
             const w = (tex.image && tex.image.width) || 1
             const h = (tex.image && tex.image.height) || 1
-            if (uniformsRef.current?.u_texResHover?.value)
+            if (uniformsRef.current?.u_texResHover?.value) {
                 uniformsRef.current.u_texResHover.value.set(w, h)
+                console.log('Hover texture loaded:', w, h)
+            }
         })
         // Color space for modern three versions
         // @ts-ignore - guard older versions
@@ -155,8 +159,8 @@ export default function Page(props: Props) {
             u_scaleMax: { value: imageScale },
             u_distortAmp: { value: 0.0 }, // keep defined, neutralized
             u_distortFreq: { value: 0.0 }, // keep defined, unused
-            u_texResBase: { value: new Vector2(1, 1) },
-            u_texResHover: { value: new Vector2(1, 1) },
+            u_texResBase: { value: new Vector2(1000, 1000) },
+            u_texResHover: { value: new Vector2(1000, 1000) },
             u_imagePosBase: { value: new Vector2(
                 parseFloat(imageBase?.positionX || "50%") / 100,
                 1.0 - parseFloat(imageBase?.positionY || "50%") / 100
@@ -319,10 +323,9 @@ export default function Page(props: Props) {
         float c = circle_tutorial(circlePos, u_radius, u_blur) * u_circleBoost * u_progress;
         float finalMask = smoothstep(0.4, 0.5, (n * u_noiseStrength) + pow(c, 2.0));
 
-        // Subtle scale on hover image
+        // Store the scale value for later use in hover image calculation
         vec2 center = vec2(0.5);
         float scale = mix(1.0, u_scaleMax, u_progress);
-        vec2 uvScaled = (uvDistorted - center) / scale + center;
 
         // cover-fit UVs (center-crop to square plane) with proper positioning
         vec2 coverBase;
@@ -339,19 +342,26 @@ export default function Page(props: Props) {
           vec2 offset = (u_imagePosBase - vec2(0.5)) * (s - 1.0);
           coverBase = (uvDistorted - 0.5) * s + 0.5 + offset;
         }
+        
         vec2 coverHover;
         {
           float planeRatio = u_planeRes.x / u_planeRes.y;
           float texRatio = u_texResHover.x / u_texResHover.y;
+          
+          // Safety check - if texture dimensions are invalid, fallback to 1:1
+          if (u_texResHover.x <= 0.0 || u_texResHover.y <= 0.0) {
+            texRatio = 1.0;
+          }
+          
           vec2 s = vec2(1.0);
           if (texRatio > planeRatio) {
             s.x = texRatio / planeRatio;
           } else {
             s.y = planeRatio / texRatio;
           }
-          // Apply image positioning offset and scaling
+          // Apply image positioning offset
           vec2 offset = (u_imagePosHover - vec2(0.5)) * (s - 1.0);
-          coverHover = (uvScaled - 0.5) * s + 0.5 + offset;
+          coverHover = (uvDistorted - 0.5) * s + 0.5 + offset;
         }
 
         vec4 img = texture2D(u_image, coverBase);
@@ -548,7 +558,7 @@ addPropertyControls(Page, {
         type: ControlType.Number,
         title: "Radius",
         min: 0.02,
-        max: 0.35,
+        max: 2,
         step: 0.005,
         defaultValue: 0.1,
         unit: "",

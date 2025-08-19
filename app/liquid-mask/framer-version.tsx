@@ -103,52 +103,22 @@ export default function Page(props: Props) {
         )
         camera.position.set(0, 0, perspective)
 
+        // Load hover image texture for direct rendering
         const loader = new TextureLoader()
-        const baseSrc =
-            imgEl.getAttribute("src") || "/random-assets/profile-image.png"
-        const hoverSrc =
-            imgEl.getAttribute("data-hover") ||
-            "/random-assets/blue-profile-image.png"
-        const baseTexture = loader.load(baseSrc, (tex: any) => {
-            const w = (tex.image && tex.image.width) || 1
-            const h = (tex.image && tex.image.height) || 1
-            if (uniformsRef.current?.u_texResBase?.value) {
-                uniformsRef.current.u_texResBase.value.set(w, h)
-                console.log('Base texture loaded:', w, h)
-            }
-        })
-        const hoverTexture = loader.load(hoverSrc, (tex: any) => {
-            const w = (tex.image && tex.image.width) || 1
-            const h = (tex.image && tex.image.height) || 1
-            if (uniformsRef.current?.u_texResHover?.value) {
-                uniformsRef.current.u_texResHover.value.set(w, h)
-                console.log('Hover texture loaded:', w, h)
-            }
-        })
+        const hoverSrc = imageHover?.src || "/random-assets/blue-profile-image.png"
+        const hoverTexture = loader.load(hoverSrc)
         // Color space for modern three versions
         // @ts-ignore - guard older versions
         if (SRGBColorSpace) {
             // @ts-ignore
-            baseTexture.colorSpace = SRGBColorSpace
-            // @ts-ignore
             hoverTexture.colorSpace = SRGBColorSpace
         }
-        baseTexture.minFilter = LinearFilter
         hoverTexture.minFilter = LinearFilter
 
         const uniforms: { [key: string]: any } = {
             u_time: { value: 0 },
-            u_image: { value: baseTexture },
-            u_imagehover: { value: hoverTexture },
             u_mouse: { value: new Vector2(0.5, 0.5) },
             u_progress: { value: 0 },
-            u_resolution: {
-                value: new Vector2(containerRect.width, containerRect.height),
-            },
-            u_res: {
-                value: new Vector2(containerRect.width, containerRect.height),
-            },
-            u_pr: { value: Math.min(window.devicePixelRatio || 1, 2) },
             u_planeRes: { value: new Vector2(1, 1) },
             u_radius: { value: radius },
             u_blur: { value: blur },
@@ -156,19 +126,7 @@ export default function Page(props: Props) {
             u_noiseFreq: { value: noiseFreq },
             u_noiseStrength: { value: noiseStrength },
             u_timeSpeed: { value: timeSpeed },
-            u_scaleMax: { value: imageScale },
-            u_distortAmp: { value: 0.0 }, // keep defined, neutralized
-            u_distortFreq: { value: 0.0 }, // keep defined, unused
-            u_texResBase: { value: new Vector2(1000, 1000) },
-            u_texResHover: { value: new Vector2(1000, 1000) },
-            u_imagePosBase: { value: new Vector2(
-                parseFloat(imageBase?.positionX || "50%") / 100,
-                1.0 - parseFloat(imageBase?.positionY || "50%") / 100
-            ) },
-            u_imagePosHover: { value: new Vector2(
-                parseFloat(imageHover?.positionX || "50%") / 100,
-                1.0 - parseFloat(imageHover?.positionY || "50%") / 100
-            ) },
+            u_hoverImage: { value: hoverTexture },
         }
         uniformsRef.current = uniforms
 
@@ -180,17 +138,13 @@ export default function Page(props: Props) {
       }
     `
 
-        // Simplex noise (3D) adapted for GLSL1
+        // Shader that renders the hover image masked by the gooey effect
         const fragmentShader = `
       precision highp float;
       varying vec2 vUv;
       uniform float u_time;
-      uniform sampler2D u_image;
-      uniform sampler2D u_imagehover;
       uniform vec2 u_mouse;
       uniform float u_progress;
-      uniform vec2 u_res;
-      uniform float u_pr;
       uniform vec2 u_planeRes;
       uniform float u_radius;
       uniform float u_blur;
@@ -198,13 +152,7 @@ export default function Page(props: Props) {
       uniform float u_noiseFreq;
       uniform float u_noiseStrength;
       uniform float u_timeSpeed;
-      uniform float u_scaleMax;
-    //   uniform float u_distortAmp;
-    //   uniform float u_distortFreq;
-      uniform vec2 u_texResBase;
-      uniform vec2 u_texResHover;
-      uniform vec2 u_imagePosBase;
-      uniform vec2 u_imagePosHover;
+      uniform sampler2D u_hoverImage;
 
       // Simplex noise 3D from https://github.com/ashima/webgl-noise
       vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -224,10 +172,6 @@ export default function Page(props: Props) {
         vec3 i1 = min( g.xyz, l.zxy );
         vec3 i2 = max( g.xyz, l.zxy );
 
-        //  x0 = x0 - 0.0 + 0.0 * C.xxx;
-        //  x1 = x0 - i1  + 1.0 * C.xxx;
-        //  x2 = x0 - i2  + 2.0 * C.xxx;
-        //  x3 = x0 - 1.0 + 3.0 * C.xxx;
         vec3 x1 = x0 - i1 + C.xxx;
         vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y
         vec3 x3 = x0 - D.yyy;      // -1.0 + 3.0 * C.x = -0.5 = -D.y
@@ -292,92 +236,33 @@ export default function Page(props: Props) {
       }
 
       void main() {
-        // Texture coordinates
-        // Distortion (small flow field) on UVs for both textures
         vec2 uv = vUv;
-        // float d1 = snoise(vec3(uv * u_distortFreq, u_time * 0.25));
-        // float d2 = snoise(vec3((uv + 10.0) * (u_distortFreq * 0.7), u_time * 0.23));
-        // vec2 flow = vec2(d1, d2) * u_distortAmp * u_progress;
-        vec2 uvDistorted = uv;
 
-        // Plane-centered coordinates (match tutorial logic but in local plane space)
-        // Rebuild st from the distorted UVs so the gooey mask is also affected
+        // Plane-centered coordinates
         vec2 st = vUv - vec2(0.5);
         st.y *= u_planeRes.y / u_planeRes.x;
-        vec2 stDist = uvDistorted - vec2(0.5);
-        stDist.y *= u_planeRes.y / u_planeRes.x;
 
         // Adjust mouse to plane-centered/aspect-corrected coords
         vec2 mouse = (u_mouse - vec2(0.5));
         mouse.y *= u_planeRes.y / u_planeRes.x;
         mouse *= -1.0;
 
-        vec2 circlePos = stDist + mouse;
+        vec2 circlePos = st + mouse;
 
-         // Animated noise with lateral (left-right) drift
-        float offx = uvDistorted.x + (u_time * 0.1) + sin(uvDistorted.y + u_time * 0.1);
-        float offy = uvDistorted.y - cos(u_time * 0.001) * 0.01;
+        // Animated noise with lateral (left-right) drift
+        float offx = uv.x + (u_time * 0.1) + sin(uv.y + u_time * 0.1);
+        float offy = uv.y - cos(u_time * 0.001) * 0.01;
         float n = snoise(vec3(offx * u_noiseFreq, offy * u_noiseFreq, u_time * (u_timeSpeed * 0.1))) - 1.0;
 
         // Circle and merge using the tutorial's parameters
         float c = circle_tutorial(circlePos, u_radius, u_blur) * u_circleBoost * u_progress;
         float finalMask = smoothstep(0.4, 0.5, (n * u_noiseStrength) + pow(c, 2.0));
 
-        // Store the scale value for later use in hover image calculation
-        vec2 center = vec2(0.5);
-        float scale = mix(1.0, u_scaleMax, u_progress);
-
-        // cover-fit UVs (center-crop to square plane) with proper positioning
-        vec2 coverBase;
-        {
-          float planeRatio = u_planeRes.x / u_planeRes.y;
-          float texRatio = u_texResBase.x / u_texResBase.y;
-          vec2 s = vec2(1.0);
-          if (texRatio > planeRatio) {
-            s.x = texRatio / planeRatio;
-          } else {
-            s.y = planeRatio / texRatio;
-          }
-          // Apply image positioning offset
-          vec2 offset = (u_imagePosBase - vec2(0.5)) * (s - 1.0);
-          coverBase = (uvDistorted - 0.5) * s + 0.5 + offset;
-        }
+        // Sample the hover image and apply the mask
+        vec4 hoverColor = texture2D(u_hoverImage, vUv);
         
-        vec2 coverHover;
-        {
-          float planeRatio = u_planeRes.x / u_planeRes.y;
-          float texRatio = u_texResHover.x / u_texResHover.y;
-          
-          // Safety check - if texture dimensions are invalid, fallback to 1:1
-          if (u_texResHover.x <= 0.0 || u_texResHover.y <= 0.0) {
-            texRatio = 1.0;
-          }
-          
-          vec2 s = vec2(1.0);
-          if (texRatio > planeRatio) {
-            s.x = texRatio / planeRatio;
-          } else {
-            s.y = planeRatio / texRatio;
-          }
-          // Apply image positioning offset
-          vec2 offset = (u_imagePosHover - vec2(0.5)) * (s - 1.0);
-          coverHover = (uvDistorted - 0.5) * s + 0.5 + offset;
-        }
-
-        vec4 img = texture2D(u_image, coverBase);
-        vec4 hover = texture2D(u_imagehover, coverHover);
-        
-        // Make the entire shader output transparent so only the DOM image shows through
-        // Only show the hover image in the gooey effect areas
-        vec4 color = vec4(0.0, 0.0, 0.0, 0.0); // Completely transparent
-        
-        // Only show hover image where the gooey mask exists
-        if (finalMask > 0.01) { // Small threshold to avoid artifacts
-            color = hover;
-            color.a = finalMask; // Use mask value for alpha
-        }
-        
-        gl_FragColor = color;
+        // Output the hover image with mask applied as alpha
+        gl_FragColor = vec4(hoverColor.rgb, hoverColor.a * finalMask);
       }
     `
 
@@ -395,16 +280,13 @@ export default function Page(props: Props) {
         const offset = new Vector2()
 
         const updateFromDOM = () => {
-            const rect = imgEl.getBoundingClientRect()
             const containerRect = container.getBoundingClientRect()
-            sizes.set(rect.width, rect.height)
-            offset.set(
-                rect.left + rect.width / 2 - containerRect.left - containerRect.width / 2,
-                -(rect.top + rect.height / 2 - containerRect.top - containerRect.height / 2)
-            )
-            mesh.position.set(offset.x, offset.y, 0)
-            mesh.scale.set(sizes.x, sizes.y, 1)
-            uniforms.u_planeRes.value.set(rect.width, rect.height)
+            // Make the mesh fill the entire container (not just the image)
+            sizes.set(containerRect.width, containerRect.height)
+            offset.set(0, 0) // Center in container
+            mesh.position.set(0, 0, 0)
+            mesh.scale.set(containerRect.width, containerRect.height, 1)
+            uniforms.u_planeRes.value.set(containerRect.width, containerRect.height)
         }
         updateFromDOM()
 
@@ -422,11 +304,13 @@ export default function Page(props: Props) {
             uniforms.u_noiseFreq.value = noiseFreq
             uniforms.u_noiseStrength.value = noiseStrength
             uniforms.u_timeSpeed.value = timeSpeed
-            uniforms.u_scaleMax.value = imageScale
+
             // ease progress
             uniforms.u_progress.value +=
                 (targetProgress - uniforms.u_progress.value) * 0.08
             renderer.render(scene, camera)
+            
+            // Canvas now renders hover image directly - no data URL needed
         }
         render()
 
@@ -450,9 +334,9 @@ export default function Page(props: Props) {
         resizeObserver.observe(container)
 
         const onMove = (e: MouseEvent) => {
-            const rect = imgEl.getBoundingClientRect()
-            const x = (e.clientX - rect.left) / rect.width
-            const y = 1 - (e.clientY - rect.top) / rect.height
+            const containerRect = container.getBoundingClientRect()
+            const x = (e.clientX - containerRect.left) / containerRect.width
+            const y = 1 - (e.clientY - containerRect.top) / containerRect.height
             uniforms.u_mouse.value.set(
                 Math.max(0.0, Math.min(1.0, x)),
                 Math.max(0.0, Math.min(1.0, y))
@@ -465,20 +349,19 @@ export default function Page(props: Props) {
             targetProgress = 0
         }
 
-        imgEl.addEventListener("mousemove", onMove)
-        imgEl.addEventListener("mouseenter", onEnter)
-        imgEl.addEventListener("mouseleave", onLeave)
+        container.addEventListener("mousemove", onMove)
+        container.addEventListener("mouseenter", onEnter)
+        container.addEventListener("mouseleave", onLeave)
 
         return () => {
             cancelAnimationFrame(rafId)
             resizeObserver.disconnect()
-            imgEl.removeEventListener("mousemove", onMove)
-            imgEl.removeEventListener("mouseenter", onEnter)
-            imgEl.removeEventListener("mouseleave", onLeave)
+            container.removeEventListener("mousemove", onMove)
+            container.removeEventListener("mouseenter", onEnter)
+            container.removeEventListener("mouseleave", onLeave)
             geometry.dispose()
             material.dispose()
-            baseTexture.dispose()
-            hoverTexture.dispose()
+
             renderer.dispose()
         }
     }, [radius, blur, circleBoost, noiseFreq, noiseStrength, timeSpeed, imageScale, imageBase?.positionX, imageBase?.positionY, imageHover?.positionX, imageHover?.positionY])
@@ -496,7 +379,7 @@ export default function Page(props: Props) {
                 ...props.style
             }}
         >
-            {/* Show the DOM image in both canvas and preview modes with full opacity */}
+            {/* Base image - always visible */}
             <figure style={{
                 width: "100%",
                 height: "100%",
@@ -506,16 +389,12 @@ export default function Page(props: Props) {
                 padding: 0,
                 position: "absolute",
                 zIndex: 1,
-                opacity: 1, // Always show at full opacity
-                pointerEvents: "auto" // Enable interactions
             }}>
                 <img
                     ref={imgRef}
                     src={imageBase?.src}
                     srcSet={imageBase?.srcSet}
-                    data-hover={imageHover?.src}
-                    data-hover-srcset={imageHover?.srcSet}
-                    alt={imageBase?.alt || "Profile"}
+                    alt={imageBase?.alt || "Base image"}
                     style={{
                         width: "100%",
                         height: "100%",
@@ -527,7 +406,9 @@ export default function Page(props: Props) {
                 />
             </figure>
             
-            {/* Three.js canvas - make it transparent so only the gooey effect is visible */}
+            {/* Hover image rendered by canvas - no DOM element needed */}
+            
+            {/* Three.js canvas - temporarily visible for debugging */}
             <canvas 
                 ref={canvasRef} 
                 id="stage" 
@@ -537,8 +418,9 @@ export default function Page(props: Props) {
                     top: 0,
                     width: "100%",
                     height: "100%",
-                    zIndex: 10,
-                    pointerEvents: "none"
+                    zIndex: 3,
+                    pointerEvents: "none",
+                    opacity: 1 // Now renders the hover image directly
                 }}
             />
         </div>

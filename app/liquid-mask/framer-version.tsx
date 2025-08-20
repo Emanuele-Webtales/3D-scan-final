@@ -40,31 +40,31 @@ interface Props {
  * @framerDisableUnlink
  * @framerSupportedLayoutWidth any
  * @framerSupportedLayoutHeight any
- * 
+ *
  * Liquid Mask Component with Gooey Effect
- * 
+ *
  * How It Works:
  * - The DOM image is always visible at full opacity with proper cover behavior
  * - The Three.js canvas outputs a transparent result (no dark overlay)
  * - Only the hover image appears in the gooey effect areas
  * - This creates a clean effect where the base image shows through naturally
- * 
+ *
  * Canvas vs Preview Behavior:
  * - Both modes now show the same clean result
  * - No more double image or dark stretched overlay
  * - NEW: Preview mode shows effect in center when in Canvas mode
  */
 export default function Page(props: Props) {
-    const { 
-        imageBase, 
-        imageHover, 
+    const {
+        imageBase,
+        imageHover,
         radius = 50,
         blur = 0.5,
         circleBoost = 0.5,
         noiseFreq = 5,
         noiseStrength = 0.3,
         timeSpeed = 5,
-        preview = false
+        preview = false,
     } = props
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
     const imgRef = useRef<HTMLImageElement | null>(null)
@@ -102,13 +102,14 @@ export default function Page(props: Props) {
         return normalizedTimeSpeed * 0.1
     }
 
-
-
     useEffect(() => {
         const canvas = canvasRef.current
         const imgEl = imgRef.current
         const container = containerRef.current
         if (!canvas || !imgEl || !container) return
+
+        // Animation state variable
+        let isAnimating = false
 
         // Scene setup
         const scene = new Scene()
@@ -119,16 +120,24 @@ export default function Page(props: Props) {
             antialias: true,
         })
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-        
+
         // Get container dimensions instead of viewport
         const containerRect = container.getBoundingClientRect()
-        renderer.setSize(containerRect.width, containerRect.height)
+        
+        // For initial sizing, ensure we have valid dimensions
+        const initialWidth = Math.max(containerRect.width, 300) // Fallback minimum
+        const initialHeight = Math.max(containerRect.height, 200) // Fallback minimum
+        renderer.setSize(initialWidth, initialHeight)
 
         const computeFov = () => {
             const containerRect = container.getBoundingClientRect()
-            return (180 * (2 * Math.atan(containerRect.height / 2 / perspective))) / Math.PI
+            return (
+                (180 *
+                    (2 * Math.atan(containerRect.height / 2 / perspective))) /
+                Math.PI
+            )
         }
-        
+
         const camera = new PerspectiveCamera(
             computeFov(),
             containerRect.width / containerRect.height,
@@ -139,12 +148,19 @@ export default function Page(props: Props) {
 
         // Load hover image texture for direct rendering
         const loader = new TextureLoader()
-        const hoverSrc = imageHover?.src || "/random-assets/blue-profile-image.png"
+        const hoverSrc =
+            imageHover?.src || "/random-assets/blue-profile-image.png"
         const hoverTexture = loader.load(hoverSrc, () => {
             // Update aspect ratio when texture loads
             if (hoverTexture.image) {
-                const imageAspect = hoverTexture.image.width / hoverTexture.image.height
+                const imageAspect =
+                    hoverTexture.image.width / hoverTexture.image.height
                 uniforms.u_hoverImageAspect.value = imageAspect
+
+                // Force a re-render to update the effect with new aspect ratio
+                if (isAnimating) {
+                    renderer.render(scene, camera)
+                }
             }
         })
         // Color space for modern three versions
@@ -308,14 +324,21 @@ export default function Page(props: Props) {
 
         // Responsive UV mapping for hover image (maintains aspect ratio like object-fit: cover)
         vec2 responsiveUV = uv;
-        if (u_hoverImageAspect > u_containerAspect) {
-          // Image is wider than container - scale to fit height
-          float scale = u_containerAspect / u_hoverImageAspect;
-          responsiveUV.x = (uv.x - 0.5) * scale + 0.5;
+        
+        // Ensure we're not getting NaN or invalid values
+        if (u_hoverImageAspect > 0.0 && u_containerAspect > 0.0) {
+            if (u_hoverImageAspect > u_containerAspect) {
+              // Image is wider than container - scale to fit height
+              float scale = u_containerAspect / u_hoverImageAspect;
+              responsiveUV.x = (uv.x - 0.5) * scale + 0.5;
+            } else {
+              // Image is taller than container - scale to fit width
+              float scale = u_hoverImageAspect / u_containerAspect;
+              responsiveUV.y = (uv.y - 0.5) * scale + 0.5;
+            }
         } else {
-          // Image is taller than container - scale to fit width
-          float scale = u_hoverImageAspect / u_containerAspect;
-          responsiveUV.y = (uv.y - 0.5) * scale + 0.5;
+            // Fallback to original UV if aspect ratios are invalid
+            responsiveUV = uv;
         }
 
         // Sample the hover image with responsive UV mapping and apply the mask
@@ -341,36 +364,106 @@ export default function Page(props: Props) {
 
         const updateFromDOM = () => {
             const containerRect = container.getBoundingClientRect()
+            
+            // Ensure we have valid dimensions
+            if (containerRect.width <= 0 || containerRect.height <= 0) return
+            
+            // In Canvas mode, use the parent container's dimensions for better sizing
+            const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
+            let actualWidth = containerRect.width
+            let actualHeight = containerRect.height
+            
+            if (isCanvasMode) {
+                // In Canvas mode, sometimes the container dimensions are not accurate
+                // Try to get the actual available space from the parent or canvas dimensions
+                const parentRect = container.parentElement?.getBoundingClientRect()
+                if (parentRect && parentRect.width > containerRect.width && parentRect.height > containerRect.height) {
+                    // Use parent dimensions if they're larger (more accurate for Canvas mode)
+                    actualWidth = parentRect.width
+                    actualHeight = parentRect.height
+                }
+                
+                // Alternative: Use canvas client dimensions if available and larger
+                const canvasClientWidth = canvas.clientWidth
+                const canvasClientHeight = canvas.clientHeight
+                if (canvasClientWidth > actualWidth) actualWidth = canvasClientWidth
+                if (canvasClientHeight > actualHeight) actualHeight = canvasClientHeight
+            }
+            
             // Make the mesh fill the entire container (not just the image)
-            sizes.set(containerRect.width, containerRect.height)
+            sizes.set(actualWidth, actualHeight)
             offset.set(0, 0) // Center in container
             mesh.position.set(0, 0, 0)
-            mesh.scale.set(containerRect.width, containerRect.height, 1)
-            uniforms.u_planeRes.value.set(containerRect.width, containerRect.height)
+            mesh.scale.set(actualWidth, actualHeight, 1)
             
+            // Update renderer size to match container exactly
+            renderer.setSize(actualWidth, actualHeight, false)
+            
+            // Update camera to match new dimensions
+            camera.aspect = actualWidth / actualHeight
+            camera.updateProjectionMatrix()
+            
+            // Ensure camera is positioned correctly for the new dimensions
+            camera.position.z = perspective
+            camera.lookAt(0, 0, 0)
+            
+            uniforms.u_planeRes.value.set(actualWidth, actualHeight)
+
             // Update aspect ratio uniforms for responsive hover image
-            const containerAspect = containerRect.width / containerRect.height
+            const containerAspect = actualWidth / actualHeight
             uniforms.u_containerAspect.value = containerAspect
-            
+
             // Calculate hover image aspect ratio when texture is loaded
             if (hoverTexture.image) {
-                const imageAspect = hoverTexture.image.width / hoverTexture.image.height
+                const imageAspect =
+                    hoverTexture.image.width / hoverTexture.image.height
                 uniforms.u_hoverImageAspect.value = imageAspect
             }
+
+            // Force a re-render to update the effect
+            if (isAnimating) {
+                renderer.render(scene, camera)
+            }
+            
+            // Debug: log dimensions in Canvas mode
+            if (isCanvasMode) {
+                console.log('Canvas updateFromDOM - Container:', containerRect.width, 'x', containerRect.height, 'Actual:', actualWidth, 'x', actualHeight, 'Parent:', container.parentElement?.getBoundingClientRect().width, 'x', container.parentElement?.getBoundingClientRect().height)
+            }
+        }
+
+                // Initial setup - ensure Canvas mode gets proper dimensions
+        updateFromDOM()
+        
+        // Additional update for Canvas mode to ensure proper sizing
+        if (RenderTarget.current() === RenderTarget.canvas) {
+            // Force multiple updates in Canvas mode to ensure proper sizing
+            setTimeout(() => updateFromDOM(), 50)
+            setTimeout(() => updateFromDOM(), 150)
+            setTimeout(() => updateFromDOM(), 300)
+            
+            // Debug: log aspect ratios in Canvas mode
+            setTimeout(() => {
+                console.log(
+                    "Canvas mode - Container aspect:",
+                    uniforms.u_containerAspect.value,
+                    "Image aspect:",
+                    uniforms.u_hoverImageAspect.value
+                )
+            }, 350)
         }
         updateFromDOM()
 
         let targetProgress = 0
         let rafId = 0
         const clock = new Clock()
-        let isAnimating = false
 
         // Function to determine if we should animate
         const shouldAnimate = () => {
             const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
-            const isInView = container.getBoundingClientRect().top < window.innerHeight && 
-                            container.getBoundingClientRect().bottom > 0
-            
+            const isInView =
+                container.getBoundingClientRect().top < window.innerHeight &&
+                container.getBoundingClientRect().bottom > 0
+
             // Only animate if:
             // 1. We're in Canvas mode AND preview is enabled, OR
             // 2. We're not in Canvas mode (live website) AND component is in view
@@ -386,7 +479,7 @@ export default function Page(props: Props) {
 
             isAnimating = true
             rafId = requestAnimationFrame(render)
-            
+
             uniforms.u_time.value += clock.getDelta()
             // Update uniforms with current prop values (mapped to internal ranges)
             uniforms.u_radius.value = mapRadius(radius)
@@ -412,7 +505,7 @@ export default function Page(props: Props) {
             uniforms.u_progress.value +=
                 (targetProgress - uniforms.u_progress.value) * 0.08
             renderer.render(scene, camera)
-            
+
             // Canvas now renders hover image directly - no data URL needed
         }
 
@@ -425,36 +518,79 @@ export default function Page(props: Props) {
         let resizeTimeout: NodeJS.Timeout | null = null
         const throttledResize = () => {
             if (resizeTimeout) return
-            
+
             resizeTimeout = setTimeout(() => {
                 const containerRect = container.getBoundingClientRect()
                 renderer.setSize(containerRect.width, containerRect.height)
                 camera.aspect = containerRect.width / containerRect.height
                 camera.fov = computeFov()
                 camera.updateProjectionMatrix()
-                uniforms.u_resolution.value.set(
-                    containerRect.width,
-                    containerRect.height
-                )
-                uniforms.u_res.value.set(containerRect.width, containerRect.height)
-                uniforms.u_pr.value = Math.min(window.devicePixelRatio || 1, 2)
+
+                // Update all resolution-related uniforms
+                if (uniforms.u_resolution)
+                    uniforms.u_resolution.value.set(
+                        containerRect.width,
+                        containerRect.height
+                    )
+                if (uniforms.u_res)
+                    uniforms.u_res.value.set(
+                        containerRect.width,
+                        containerRect.height
+                    )
+                if (uniforms.u_pr)
+                    uniforms.u_pr.value = Math.min(
+                        window.devicePixelRatio || 1,
+                        2
+                    )
+
+                // Update DOM and force re-render
                 updateFromDOM()
+
+                // Ensure the effect is properly updated
+                if (isAnimating) {
+                    renderer.render(scene, camera)
+                }
+
                 resizeTimeout = null
             }, 100) // 100ms throttle
         }
-        
+
         // Use ResizeObserver for container changes
-        const resizeObserver = new ResizeObserver(throttledResize)
+        const resizeObserver = new ResizeObserver((entries) => {
+            // Immediate update for critical dimension changes
+            entries.forEach((entry) => {
+                const { width, height } = entry.contentRect
+                const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
+                
+                // In Canvas mode, be more aggressive about updating on any size change
+                if (isCanvasMode || width !== sizes.x || height !== sizes.y) {
+                    // Force immediate update for dimension changes
+                    updateFromDOM()
+                    
+                    // In Canvas mode, also force additional updates with delay
+                    if (isCanvasMode) {
+                        setTimeout(() => updateFromDOM(), 10)
+                        setTimeout(() => updateFromDOM(), 50)
+                    }
+                }
+            })
+            // Also use throttled resize for performance
+            throttledResize()
+        })
         resizeObserver.observe(container)
-        
+
         // Also listen to window resize for global changes
-        window.addEventListener('resize', throttledResize)
+        window.addEventListener("resize", throttledResize)
 
         // Intersection Observer to pause rendering when out of view
         const intersectionObserver = new IntersectionObserver(
             (entries) => {
                 entries.forEach((entry) => {
-                    if (entry.isIntersecting && !isAnimating && shouldAnimate()) {
+                    if (
+                        entry.isIntersecting &&
+                        !isAnimating &&
+                        shouldAnimate()
+                    ) {
                         // Component came into view and should animate
                         render()
                     }
@@ -462,8 +598,8 @@ export default function Page(props: Props) {
             },
             {
                 root: null,
-                rootMargin: '50px', // Start animating 50px before component comes into view
-                threshold: 0.01
+                rootMargin: "50px", // Start animating 50px before component comes into view
+                threshold: 0.01,
             }
         )
         intersectionObserver.observe(container)
@@ -472,12 +608,12 @@ export default function Page(props: Props) {
             // Only handle mouse events if not in Canvas preview mode
             const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
             if (isCanvasMode && preview) return
-            
+
             // Start animation if not already running
             if (!isAnimating && shouldAnimate()) {
                 render()
             }
-            
+
             const containerRect = container.getBoundingClientRect()
             const x = (e.clientX - containerRect.left) / containerRect.width
             const y = 1 - (e.clientY - containerRect.top) / containerRect.height
@@ -490,9 +626,9 @@ export default function Page(props: Props) {
             // Only handle hover events if not in Canvas preview mode
             const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
             if (isCanvasMode && preview) return
-            
+
             targetProgress = 1
-            
+
             // Start animation if not already running
             if (!isAnimating && shouldAnimate()) {
                 render()
@@ -502,7 +638,7 @@ export default function Page(props: Props) {
             // Only handle hover events if not in Canvas preview mode
             const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
             if (isCanvasMode && preview) return
-            
+
             targetProgress = 0
         }
 
@@ -516,7 +652,7 @@ export default function Page(props: Props) {
             }
             resizeObserver.disconnect()
             intersectionObserver.disconnect()
-            window.removeEventListener('resize', throttledResize)
+            window.removeEventListener("resize", throttledResize)
             if (resizeTimeout) {
                 clearTimeout(resizeTimeout)
             }
@@ -527,11 +663,23 @@ export default function Page(props: Props) {
             material.dispose()
             renderer.dispose()
         }
-            }, [radius, blur, circleBoost, noiseFreq, noiseStrength, timeSpeed, preview, imageBase?.positionX, imageBase?.positionY, imageHover?.positionX, imageHover?.positionY])
+    }, [
+        radius,
+        blur,
+        circleBoost,
+        noiseFreq,
+        noiseStrength,
+        timeSpeed,
+        preview,
+        imageBase?.positionX,
+        imageBase?.positionY,
+        imageHover?.positionX,
+        imageHover?.positionY,
+    ])
 
     return (
-        <div 
-            ref={containerRef} 
+        <div
+            ref={containerRef}
             style={{
                 width: "100%",
                 height: "100%",
@@ -539,20 +687,24 @@ export default function Page(props: Props) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                ...props.style
+                ...props.style,
+
             }}
         >
             {/* Base image - always visible */}
-            <figure style={{
-                width: "100%",
-                height: "100%",
-                maxWidth: "100%",
-                flex: "0 0 auto",
-                margin: 0,
-                padding: 0,
-                position: "absolute",
-                zIndex: 1,
-            }}>
+            <figure
+                style={{
+                    width: "100%",
+                    height: "100%",
+                    maxWidth: "100%",
+                    flex: "0 0 auto",
+                    margin: 0,
+                    padding: 0,
+                    position: "absolute",
+                    zIndex: 1,
+
+                }}
+            >
                 <img
                     ref={imgRef}
                     src={imageBase?.src}
@@ -564,25 +716,32 @@ export default function Page(props: Props) {
                         objectFit: "cover",
                         objectPosition: `${imageBase?.positionX || "50%"} ${imageBase?.positionY || "50%"}`,
                         margin: 0,
-                        padding: 0
+
+                        padding: 0,
                     }}
                 />
             </figure>
-            
+
             {/* Hover image rendered by canvas - no DOM element needed */}
-            
-            {/* Three.js canvas - temporarily visible for debugging */}
-            <canvas 
-                ref={canvasRef} 
-                id="stage" 
+
+            {/* Three.js canvas - renders hover effect */}
+            <canvas
+                ref={canvasRef}
+                id="stage"
                 style={{
                     position: "absolute",
-                    inset:0,
+                    inset: 0,
                     width: "100%",
                     height: "100%",
                     zIndex: 3,
                     pointerEvents: "none",
-                    opacity: 1 // Now renders the hover image directly
+
+                    opacity: 1,
+                    // Ensure canvas takes full space in Canvas mode
+                    minWidth: "100%",
+                    minHeight: "100%",
+                    maxWidth: "100%",
+                    maxHeight: "100%",
                 }}
             />
         </div>
@@ -591,12 +750,12 @@ export default function Page(props: Props) {
 
 addPropertyControls(Page, {
     preview: {
-      type: ControlType.Boolean,
-      title: "Preview",
-      defaultValue: false,
-      enabledTitle: "On",
-      disabledTitle: "Off",
-  },
+        type: ControlType.Boolean,
+        title: "Preview",
+        defaultValue: false,
+        enabledTitle: "On",
+        disabledTitle: "Off",
+    },
     imageBase: {
         type: ControlType.ResponsiveImage,
         title: "Base",
@@ -640,7 +799,6 @@ addPropertyControls(Page, {
         step: 0.1,
         defaultValue: 5,
         unit: "",
-        
     },
     noiseStrength: {
         type: ControlType.Number,
@@ -650,7 +808,6 @@ addPropertyControls(Page, {
         step: 0.01,
         defaultValue: 0.3,
         unit: "",
-        
     },
     timeSpeed: {
         type: ControlType.Number,
@@ -661,6 +818,4 @@ addPropertyControls(Page, {
         defaultValue: 5,
         unit: "",
     },
-
-
 })

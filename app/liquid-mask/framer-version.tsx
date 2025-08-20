@@ -57,7 +57,7 @@ export default function Page(props: Props) {
     const { 
         imageBase, 
         imageHover, 
-        radius = 0.1,
+        radius = 50,
         blur = 2.0,
         circleBoost = 2.5,
         noiseFreq = 8.0,
@@ -225,37 +225,35 @@ export default function Page(props: Props) {
                                       dot(p2,x2), dot(p3,x3) ) );
       }
 
-      // Tutorial circle implementation in centered coordinates
-      float circle_tutorial(vec2 _st, float _radius, float blurriness){
-        vec2 dist = _st;
+      // Pixel-based circle implementation
+      float circle_pixel(vec2 pixelPos, vec2 mousePixel, float radiusPixels, float blurriness, vec2 resolution){
+        float dist = length(pixelPos - mousePixel);
         return 1.0 - smoothstep(
-          _radius - (_radius * blurriness),
-          _radius + (_radius * blurriness),
-          dot(dist, dist) * 4.0
+          radiusPixels - (radiusPixels * blurriness),
+          radiusPixels + (radiusPixels * blurriness),
+          dist
         );
       }
 
       void main() {
         vec2 uv = vUv;
 
-        // Plane-centered coordinates
-        vec2 st = vUv - vec2(0.5);
-        st.y *= u_planeRes.y / u_planeRes.x;
+        // Convert UV coordinates to pixel coordinates
+        vec2 pixelPos = uv * u_planeRes;
+        vec2 mousePixel = u_mouse * u_planeRes;
 
-        // Adjust mouse to plane-centered/aspect-corrected coords
-        vec2 mouse = (u_mouse - vec2(0.5));
-        mouse.y *= u_planeRes.y / u_planeRes.x;
-        mouse *= -1.0;
+        // Convert radius from normalized to pixels (u_radius is now in pixels)
+        float radiusPixels = u_radius;
 
-        vec2 circlePos = st + mouse;
-
-        // Animated noise with lateral (left-right) drift
-        float offx = uv.x + (u_time * 0.1) + sin(uv.y + u_time * 0.1);
+        // Aspect ratio corrected noise - uniform scale regardless of component proportions
+        float aspectRatio = u_planeRes.x / u_planeRes.y;
+        float correctedX = uv.x * aspectRatio;
+        float offx = correctedX + (u_time * 0.1) + sin(uv.y + u_time * 0.1);
         float offy = uv.y - cos(u_time * 0.001) * 0.01;
         float n = snoise(vec3(offx * u_noiseFreq, offy * u_noiseFreq, u_time * (u_timeSpeed * 0.1))) - 1.0;
 
-        // Circle and merge using the tutorial's parameters
-        float c = circle_tutorial(circlePos, u_radius, u_blur) * u_circleBoost * u_progress;
+        // Pixel-based circle calculation
+        float c = circle_pixel(pixelPos, mousePixel, radiusPixels, u_blur, u_planeRes) * u_circleBoost * u_progress;
         float finalMask = smoothstep(0.4, 0.5, (n * u_noiseStrength) + pow(c, 2.0));
 
         // Sample the hover image and apply the mask
@@ -314,24 +312,34 @@ export default function Page(props: Props) {
         }
         render()
 
-        const onResize = () => {
-            const containerRect = container.getBoundingClientRect()
-            renderer.setSize(containerRect.width, containerRect.height)
-            camera.aspect = containerRect.width / containerRect.height
-            camera.fov = computeFov()
-            camera.updateProjectionMatrix()
-            uniforms.u_resolution.value.set(
-                containerRect.width,
-                containerRect.height
-            )
-            uniforms.u_res.value.set(containerRect.width, containerRect.height)
-            uniforms.u_pr.value = Math.min(window.devicePixelRatio || 1, 2)
-            updateFromDOM()
+        // Throttled resize handler
+        let resizeTimeout: NodeJS.Timeout | null = null
+        const throttledResize = () => {
+            if (resizeTimeout) return
+            
+            resizeTimeout = setTimeout(() => {
+                const containerRect = container.getBoundingClientRect()
+                renderer.setSize(containerRect.width, containerRect.height)
+                camera.aspect = containerRect.width / containerRect.height
+                camera.fov = computeFov()
+                camera.updateProjectionMatrix()
+                uniforms.u_resolution.value.set(
+                    containerRect.width,
+                    containerRect.height
+                )
+                uniforms.u_res.value.set(containerRect.width, containerRect.height)
+                uniforms.u_pr.value = Math.min(window.devicePixelRatio || 1, 2)
+                updateFromDOM()
+                resizeTimeout = null
+            }, 100) // 100ms throttle
         }
         
-        // Use ResizeObserver instead of window resize for container changes
-        const resizeObserver = new ResizeObserver(onResize)
+        // Use ResizeObserver for container changes
+        const resizeObserver = new ResizeObserver(throttledResize)
         resizeObserver.observe(container)
+        
+        // Also listen to window resize for global changes
+        window.addEventListener('resize', throttledResize)
 
         const onMove = (e: MouseEvent) => {
             const containerRect = container.getBoundingClientRect()
@@ -356,12 +364,15 @@ export default function Page(props: Props) {
         return () => {
             cancelAnimationFrame(rafId)
             resizeObserver.disconnect()
+            window.removeEventListener('resize', throttledResize)
+            if (resizeTimeout) {
+                clearTimeout(resizeTimeout)
+            }
             container.removeEventListener("mousemove", onMove)
             container.removeEventListener("mouseenter", onEnter)
             container.removeEventListener("mouseleave", onLeave)
             geometry.dispose()
             material.dispose()
-
             renderer.dispose()
         }
     }, [radius, blur, circleBoost, noiseFreq, noiseStrength, timeSpeed, imageScale, imageBase?.positionX, imageBase?.positionY, imageHover?.positionX, imageHover?.positionY])
@@ -414,8 +425,7 @@ export default function Page(props: Props) {
                 id="stage" 
                 style={{
                     position: "absolute",
-                    left: 0,
-                    top: 0,
+                    inset:0,
                     width: "100%",
                     height: "100%",
                     zIndex: 3,
@@ -439,11 +449,11 @@ addPropertyControls(Page, {
     radius: {
         type: ControlType.Number,
         title: "Radius",
-        min: 0.02,
-        max: 2,
-        step: 0.005,
-        defaultValue: 0.1,
-        unit: "",
+        min: 10,
+        max: 200,
+        step: 1,
+        defaultValue: 50,
+        unit: "px",
         displayStepper: true,
     },
     blur: {

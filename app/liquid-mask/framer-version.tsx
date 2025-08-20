@@ -33,6 +33,7 @@ interface Props {
     noiseStrength?: number
     timeSpeed?: number
     imageScale?: number
+    preview?: boolean
     style?: React.CSSProperties
 }
 
@@ -52,23 +53,61 @@ interface Props {
  * Canvas vs Preview Behavior:
  * - Both modes now show the same clean result
  * - No more double image or dark stretched overlay
+ * - NEW: Preview mode shows effect in center when in Canvas mode
  */
 export default function Page(props: Props) {
     const { 
         imageBase, 
         imageHover, 
         radius = 50,
-        blur = 2.0,
-        circleBoost = 2.5,
-        noiseFreq = 8.0,
-        noiseStrength = 0.6,
-        timeSpeed = 0.1,
-        imageScale = 1.05
+        blur = 0.5,
+        circleBoost = 0.5,
+        noiseFreq = 5,
+        noiseStrength = 0.3,
+        timeSpeed = 5,
+        imageScale = 1.05,
+        preview = false
     } = props
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
     const imgRef = useRef<HTMLImageElement | null>(null)
     const containerRef = useRef<HTMLDivElement | null>(null)
     const uniformsRef = useRef<any>(null)
+
+    // Value mapping functions to convert normalized property values to internal shader values
+    const mapRadius = (normalizedRadius: number) => {
+        // Map 10-1000px to 10-200px (current internal range)
+        return 10 + (normalizedRadius - 10) * (190 / 990)
+    }
+
+    const mapBlur = (normalizedBlur: number) => {
+        // Map 0-1 to 0.2-3.0 (current internal range)
+        return 0.2 + normalizedBlur * 2.8
+    }
+
+    const mapCircleBoost = (normalizedCircleBoost: number) => {
+        // Map 0-1 to 0.5-4.0 (current internal range)
+        return 0.5 + normalizedCircleBoost * 3.5
+    }
+
+    const mapNoiseFreq = (normalizedNoiseFreq: number) => {
+        // Map 1-10 to 2.0-16.0 (current internal range)
+        return 2.0 + (normalizedNoiseFreq - 1) * (14.0 / 9.0)
+    }
+
+    const mapNoiseStrength = (normalizedNoiseStrength: number) => {
+        // Map 0-1 to 0.0-3.0 (current internal range)
+        return normalizedNoiseStrength * 3.0
+    }
+
+    const mapTimeSpeed = (normalizedTimeSpeed: number) => {
+        // Map 1-10 to 0.02-5.6 (current internal range)
+        return 0.02 + (normalizedTimeSpeed - 1) * (5.58 / 9.0)
+    }
+
+    const mapImageScale = (normalizedImageScale: number) => {
+        // Map 1-2 to 1.0-1.5 (current internal range)
+        return 1.0 + (normalizedImageScale - 1) * 0.5
+    }
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -120,12 +159,12 @@ export default function Page(props: Props) {
             u_mouse: { value: new Vector2(0.5, 0.5) },
             u_progress: { value: 0 },
             u_planeRes: { value: new Vector2(1, 1) },
-            u_radius: { value: radius },
-            u_blur: { value: blur },
-            u_circleBoost: { value: circleBoost },
-            u_noiseFreq: { value: noiseFreq },
-            u_noiseStrength: { value: noiseStrength },
-            u_timeSpeed: { value: timeSpeed },
+            u_radius: { value: mapRadius(radius) },
+            u_blur: { value: mapBlur(blur) },
+            u_circleBoost: { value: mapCircleBoost(circleBoost) },
+            u_noiseFreq: { value: mapNoiseFreq(noiseFreq) },
+            u_noiseStrength: { value: mapNoiseStrength(noiseStrength) },
+            u_timeSpeed: { value: mapTimeSpeed(timeSpeed) },
             u_hoverImage: { value: hoverTexture },
         }
         uniformsRef.current = uniforms
@@ -154,7 +193,7 @@ export default function Page(props: Props) {
       uniform float u_timeSpeed;
       uniform sampler2D u_hoverImage;
 
-      // Simplex noise 3D from https://github.com/ashima/webgl-noise
+              // Simplex noise 3D from https://github.com/ashima/webgl-noise
       vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
       vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
       vec4 permute(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
@@ -291,17 +330,50 @@ export default function Page(props: Props) {
         let targetProgress = 0
         let rafId = 0
         const clock = new Clock()
+        let isAnimating = false
+
+        // Function to determine if we should animate
+        const shouldAnimate = () => {
+            const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
+            const isInView = container.getBoundingClientRect().top < window.innerHeight && 
+                            container.getBoundingClientRect().bottom > 0
+            
+            // Only animate if:
+            // 1. We're in Canvas mode AND preview is enabled, OR
+            // 2. We're not in Canvas mode (live website) AND component is in view
+            return (isCanvasMode && preview) || (!isCanvasMode && isInView)
+        }
 
         const render = () => {
+            // Check if we should continue animating
+            if (!shouldAnimate()) {
+                isAnimating = false
+                return
+            }
+
+            isAnimating = true
             rafId = requestAnimationFrame(render)
+            
             uniforms.u_time.value += clock.getDelta()
-            // Update uniforms with current prop values
-            uniforms.u_radius.value = radius
-            uniforms.u_blur.value = blur
-            uniforms.u_circleBoost.value = circleBoost
-            uniforms.u_noiseFreq.value = noiseFreq
-            uniforms.u_noiseStrength.value = noiseStrength
-            uniforms.u_timeSpeed.value = timeSpeed
+            // Update uniforms with current prop values (mapped to internal ranges)
+            uniforms.u_radius.value = mapRadius(radius)
+            uniforms.u_blur.value = mapBlur(blur)
+            uniforms.u_circleBoost.value = mapCircleBoost(circleBoost)
+            uniforms.u_noiseFreq.value = mapNoiseFreq(noiseFreq)
+            uniforms.u_noiseStrength.value = mapNoiseStrength(noiseStrength)
+            uniforms.u_timeSpeed.value = mapTimeSpeed(timeSpeed)
+
+            // Check if we're in Canvas mode and preview is enabled
+            const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
+            if (isCanvasMode && preview) {
+                // In Canvas mode with preview enabled, show effect in center
+                targetProgress = 1
+                // Set mouse position to center (0.5, 0.5)
+                uniforms.u_mouse.value.set(0.5, 0.5)
+            } else {
+                // Normal behavior - use mouse position and hover state
+                // targetProgress will be updated by mouse events
+            }
 
             // ease progress
             uniforms.u_progress.value +=
@@ -310,7 +382,11 @@ export default function Page(props: Props) {
             
             // Canvas now renders hover image directly - no data URL needed
         }
-        render()
+
+        // Start animation if needed
+        if (shouldAnimate()) {
+            render()
+        }
 
         // Throttled resize handler
         let resizeTimeout: NodeJS.Timeout | null = null
@@ -341,7 +417,34 @@ export default function Page(props: Props) {
         // Also listen to window resize for global changes
         window.addEventListener('resize', throttledResize)
 
+        // Intersection Observer to pause rendering when out of view
+        const intersectionObserver = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting && !isAnimating && shouldAnimate()) {
+                        // Component came into view and should animate
+                        render()
+                    }
+                })
+            },
+            {
+                root: null,
+                rootMargin: '50px', // Start animating 50px before component comes into view
+                threshold: 0.01
+            }
+        )
+        intersectionObserver.observe(container)
+
         const onMove = (e: MouseEvent) => {
+            // Only handle mouse events if not in Canvas preview mode
+            const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
+            if (isCanvasMode && preview) return
+            
+            // Start animation if not already running
+            if (!isAnimating && shouldAnimate()) {
+                render()
+            }
+            
             const containerRect = container.getBoundingClientRect()
             const x = (e.clientX - containerRect.left) / containerRect.width
             const y = 1 - (e.clientY - containerRect.top) / containerRect.height
@@ -351,9 +454,22 @@ export default function Page(props: Props) {
             )
         }
         const onEnter = () => {
+            // Only handle hover events if not in Canvas preview mode
+            const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
+            if (isCanvasMode && preview) return
+            
             targetProgress = 1
+            
+            // Start animation if not already running
+            if (!isAnimating && shouldAnimate()) {
+                render()
+            }
         }
         const onLeave = () => {
+            // Only handle hover events if not in Canvas preview mode
+            const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
+            if (isCanvasMode && preview) return
+            
             targetProgress = 0
         }
 
@@ -362,8 +478,11 @@ export default function Page(props: Props) {
         container.addEventListener("mouseleave", onLeave)
 
         return () => {
-            cancelAnimationFrame(rafId)
+            if (rafId) {
+                cancelAnimationFrame(rafId)
+            }
             resizeObserver.disconnect()
+            intersectionObserver.disconnect()
             window.removeEventListener('resize', throttledResize)
             if (resizeTimeout) {
                 clearTimeout(resizeTimeout)
@@ -375,7 +494,7 @@ export default function Page(props: Props) {
             material.dispose()
             renderer.dispose()
         }
-    }, [radius, blur, circleBoost, noiseFreq, noiseStrength, timeSpeed, imageScale, imageBase?.positionX, imageBase?.positionY, imageHover?.positionX, imageHover?.positionY])
+    }, [radius, blur, circleBoost, noiseFreq, noiseStrength, timeSpeed, imageScale, preview, imageBase?.positionX, imageBase?.positionY, imageHover?.positionX, imageHover?.positionY])
 
     return (
         <div 
@@ -450,70 +569,72 @@ addPropertyControls(Page, {
         type: ControlType.Number,
         title: "Radius",
         min: 10,
-        max: 200,
-        step: 1,
+        max: 1000,
+        step: 10,
         defaultValue: 50,
         unit: "px",
-        displayStepper: true,
     },
     blur: {
         type: ControlType.Number,
         title: "Blur",
-        min: 0.2,
-        max: 3.0,
-        step: 0.05,
-        defaultValue: 2.0,
+        min: 0,
+        max: 1,
+        step: 0.01,
+        defaultValue: 0.5,
         unit: "",
-        displayStepper: true,
     },
     circleBoost: {
         type: ControlType.Number,
         title: "Circle Boost",
-        min: 0.5,
-        max: 4.0,
-        step: 0.05,
-        defaultValue: 2.5,
+        min: 0,
+        max: 1,
+        step: 0.01,
+        defaultValue: 0.5,
         unit: "",
-        displayStepper: true,
     },
     noiseFreq: {
         type: ControlType.Number,
         title: "Noise Frequency",
-        min: 2.0,
-        max: 16.0,
-        step: 0.25,
-        defaultValue: 8.0,
+        min: 1,
+        max: 10,
+        step: 0.1,
+        defaultValue: 5,
         unit: "",
-        displayStepper: true,
+        
     },
     noiseStrength: {
         type: ControlType.Number,
         title: "Noise Strength",
-        min: 0.0,
-        max: 3.0,
-        step: 0.02,
-        defaultValue: 0.6,
+        min: 0,
+        max: 1,
+        step: 0.01,
+        defaultValue: 0.3,
         unit: "",
-        displayStepper: true,
+       
     },
     timeSpeed: {
         type: ControlType.Number,
         title: "Time Speed",
-        min: 0.02,
-        max: 5.6,
-        step: 0.01,
-        defaultValue: 0.1,
+        min: 1,
+        max: 10,
+        step: 0.1,
+        defaultValue: 5,
         unit: "",
-        displayStepper: true,
     },
     imageScale: {
         type: ControlType.Number,
         title: "Image Scale",
-        min: 1.0,
-        max: 1.5,
+        min: 1,
+        max: 2,
         step: 0.01,
         defaultValue: 1.05,
         unit: "",
-        displayStepper: true,
+    },
+    preview: {
+        type: ControlType.Boolean,
+        title: "Preview in Canvas",
+        defaultValue: false,
+        enabledTitle: "On",
+        disabledTitle: "Off",
     },
 })

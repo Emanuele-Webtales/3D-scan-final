@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from "react"
+import React, { useRef, useEffect, useState, useCallback } from "react"
 
 import {
     Scene,
@@ -14,6 +14,7 @@ import {
     TextureLoader,
 } from "https://cdn.jsdelivr.net/gh/framer-university/components/npm-bundles/liquid-mask.js"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
+import { ComponentMessage } from "https://framer.com/m/Utils-FINc.js"
 
 interface ResponsiveImageValue {
     src: string
@@ -29,8 +30,7 @@ interface Props {
     radius?: number
     blur?: number
     circleBoost?: number
-    noiseFreq?: number
-    noiseStrength?: number
+    texture?: number
     timeSpeed?: number
     preview?: boolean
     style?: React.CSSProperties
@@ -40,67 +40,119 @@ interface Props {
  * @framerDisableUnlink
  * @framerSupportedLayoutWidth any
  * @framerSupportedLayoutHeight any
- *
- * Liquid Mask Component with Gooey Effect
- *
- * How It Works:
- * - The DOM image is always visible at full opacity with proper cover behavior
- * - The Three.js canvas outputs a transparent result (no dark overlay)
- * - Only the hover image appears in the gooey effect areas
- * - This creates a clean effect where the base image shows through naturally
- *
- * Canvas vs Preview Behavior:
- * - Both modes now show the same clean result
- * - No more double image or dark stretched overlay
- * - NEW: Preview mode shows effect in center when in Canvas mode
+ * @framerIntrinsicWidth 300
+ * @framerIntrinsicHeight 500
  */
-export default function Page(props: Props) {
+export default function LiquidMask(props: Props) {
     const {
         imageBase,
         imageHover,
         radius = 50,
         blur = 0.5,
         circleBoost = 0.5,
-        noiseFreq = 5,
-        noiseStrength = 0.3,
+        texture = 0.5,
         timeSpeed = 5,
         preview = false,
     } = props
+
+    // Check if base image is missing
+    const hasBaseImage = imageBase && imageBase.src
+
+    // Show ComponentMessage if no base image is provided
+    if (!hasBaseImage) {
+        return (
+            <div
+                style={{ height: "100%", width: "100%", position: "relative" }}
+            >
+                <div
+                    style={{
+                        height: "100%",
+                        width: "100%",
+                        position: "relative",
+                        display: "flex",
+                        justifyContent: "center",
+                        alignItems: "center",
+                    }}
+                >
+                    <ComponentMessage
+                        style={{
+                            position: "relative",
+                            width: "100%",
+                            height: "100%",
+                            minWidth: 0,
+                            minHeight: 0,
+                        }}
+                        title="Liquid Mask Effect"
+                        description="Add a base image to create stunning liquid mask effects with gooey animations"
+                    />
+                </div>
+            </div>
+        )
+    }
+
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
     const imgRef = useRef<HTMLImageElement | null>(null)
     const containerRef = useRef<HTMLDivElement | null>(null)
     const uniformsRef = useRef<any>(null)
+    
+    // Debounced prop values to prevent excessive re-renders
+    const [debouncedProps, setDebouncedProps] = useState({
+        radius,
+        blur,
+        circleBoost,
+        texture,
+        timeSpeed,
+        preview
+    })
+
+    // Debounce prop changes to improve performance
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            setDebouncedProps({
+                radius,
+                blur,
+                circleBoost,
+                texture,
+                timeSpeed,
+                preview
+            })
+        }, 100) // 100ms debounce
+
+        return () => clearTimeout(timeoutId)
+    }, [radius, blur, circleBoost, texture, timeSpeed, preview])
 
     // Value mapping functions to convert normalized property values to internal shader values
-    const mapRadius = (normalizedRadius: number) => {
+    const mapRadius = useCallback((normalizedRadius: number) => {
         // Map 10-1000px to 10-200px (current internal range)
         return 10 + (normalizedRadius - 10) * (190 / 990)
-    }
+    }, [])
 
-    const mapBlur = (normalizedBlur: number) => {
+    const mapBlur = useCallback((normalizedBlur: number) => {
         // Map 0-1 to 0.2-3.0 (current internal range)
         return 0.2 + normalizedBlur * 2.8
-    }
+    }, [])
 
-    const mapCircleBoost = (normalizedCircleBoost: number) => {
+    const mapCircleBoost = useCallback((normalizedCircleBoost: number) => {
         // Map 0-1 to 0.5-4.0 (current internal range)
         return 0.5 + normalizedCircleBoost * 3.5
-    }
+    }, [])
 
-    const mapNoiseFreq = (normalizedNoiseFreq: number) => {
-        // Map 1-10 to 2.0-16.0 (current internal range)
-        return 2.0 + (normalizedNoiseFreq - 1) * (14.0 / 9.0)
-    }
-
-    const mapNoiseStrength = (normalizedNoiseStrength: number) => {
-        // Map 0-1 to 0.0-3.0 (current internal range)
-        return normalizedNoiseStrength * 3.0
-    }
-
-    const mapTimeSpeed = (normalizedTimeSpeed: number) => {
+    const mapTimeSpeed = useCallback((normalizedTimeSpeed: number) => {
         // Map 0-10 to 0.0-1.0 for true linear mapping from static to fast
         return normalizedTimeSpeed * 0.1
-    }
+    }, [])
+
+    // Single texture mapping that controls the overall graininess/texture of the effect
+    const mapTexture = useCallback((normalizedTexture: number) => {
+        // Map 0-1 texture control to appropriate noise parameters
+        // 0 = smooth/minimal texture, 1 = very textured/grainy
+
+        const freq = 2.0 + normalizedTexture * 12.0 // frequency range 2-14 (more dramatic)
+        const strength = normalizedTexture * 3.0 // strength range 0-3 (stronger effect)
+        const size = 1.0 - normalizedTexture * 0.7 // size range 1.0-0.3 (smaller = finer grain at high texture)
+
+        return { freq, strength, size }
+    }, [])
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -123,7 +175,7 @@ export default function Page(props: Props) {
 
         // Get container dimensions instead of viewport
         const containerRect = container.getBoundingClientRect()
-        
+
         // For initial sizing, ensure we have valid dimensions
         const initialWidth = Math.max(containerRect.width, 300) // Fallback minimum
         const initialHeight = Math.max(containerRect.height, 200) // Fallback minimum
@@ -171,20 +223,27 @@ export default function Page(props: Props) {
         }
         hoverTexture.minFilter = LinearFilter
 
+        const textureParams = mapTexture(debouncedProps.texture)
+
         const uniforms: { [key: string]: any } = {
             u_time: { value: 0 },
             u_mouse: { value: new Vector2(0.5, 0.5) },
             u_progress: { value: 0 },
             u_planeRes: { value: new Vector2(1, 1) },
-            u_radius: { value: mapRadius(radius) },
-            u_blur: { value: mapBlur(blur) },
-            u_circleBoost: { value: mapCircleBoost(circleBoost) },
-            u_noiseFreq: { value: mapNoiseFreq(noiseFreq) },
-            u_noiseStrength: { value: mapNoiseStrength(noiseStrength) },
-            u_timeSpeed: { value: mapTimeSpeed(timeSpeed) },
+            u_radius: { value: mapRadius(debouncedProps.radius) },
+            u_blur: { value: mapBlur(debouncedProps.blur) },
+            u_circleBoost: { value: mapCircleBoost(debouncedProps.circleBoost) },
+            u_noiseFreq: { value: textureParams.freq },
+            u_noiseStrength: { value: textureParams.strength },
+            u_noiseSize: { value: textureParams.size },
+            u_timeSpeed: { value: mapTimeSpeed(debouncedProps.timeSpeed) },
             u_hoverImage: { value: hoverTexture },
             u_hoverImageAspect: { value: 1.0 },
             u_containerAspect: { value: 1.0 },
+            u_windowSize: {
+                value: new Vector2(window.innerWidth, window.innerHeight),
+            },
+            u_containerOffset: { value: new Vector2(0, 0) },
         }
         uniformsRef.current = uniforms
 
@@ -209,10 +268,13 @@ export default function Page(props: Props) {
       uniform float u_circleBoost;
       uniform float u_noiseFreq;
       uniform float u_noiseStrength;
+      uniform float u_noiseSize;
       uniform float u_timeSpeed;
       uniform sampler2D u_hoverImage;
       uniform float u_hoverImageAspect;
       uniform float u_containerAspect;
+      uniform vec2 u_windowSize;
+      uniform vec2 u_containerOffset;
 
               // Simplex noise 3D from https://github.com/ashima/webgl-noise
       vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -305,17 +367,20 @@ export default function Page(props: Props) {
         // Convert radius from normalized to pixels (u_radius is now in pixels)
         float radiusPixels = u_radius;
 
-        // Aspect ratio corrected noise - uniform scale regardless of component proportions
-        float aspectRatio = u_planeRes.x / u_planeRes.y;
-        float correctedX = uv.x * aspectRatio;
+        // Window-relative noise coordinates for consistent grain size across component sizes
+        // Convert UV to absolute window coordinates, then normalize by window size
+        vec2 windowCoord = (uv * u_planeRes + u_containerOffset) / u_windowSize;
         
         // Apply time speed to ALL time-based movement
-        float offx = correctedX + (u_time * u_timeSpeed * 0.1) + sin(uv.y + u_time * u_timeSpeed * 0.1);
-        float offy = uv.y - cos(u_time * u_timeSpeed * 0.001) * 0.01;
+        float offx = windowCoord.x + (u_time * u_timeSpeed * 0.1) + sin(windowCoord.y + u_time * u_timeSpeed * 0.1);
+        float offy = windowCoord.y - cos(u_time * u_timeSpeed * 0.001) * 0.01;
+        
+        // Apply noise size scaling for user control over grain size
+        float effectiveNoiseFreq = u_noiseFreq / u_noiseSize;
         
         // Apply time speed to multiple noise layers for more dramatic effect
-        float n1 = snoise(vec3(offx * u_noiseFreq, offy * u_noiseFreq, u_time * u_timeSpeed)) - 1.0;
-        float n2 = snoise(vec3(offx * u_noiseFreq * 0.5, offy * u_noiseFreq * 0.5, u_time * u_timeSpeed * 0.7)) - 1.0;
+        float n1 = snoise(vec3(offx * effectiveNoiseFreq, offy * effectiveNoiseFreq, u_time * u_timeSpeed)) - 1.0;
+        float n2 = snoise(vec3(offx * effectiveNoiseFreq * 0.5, offy * effectiveNoiseFreq * 0.5, u_time * u_timeSpeed * 0.7)) - 1.0;
         float n = (n1 + n2 * 0.5) * 0.7;
 
         // Pixel-based circle calculation
@@ -364,50 +429,67 @@ export default function Page(props: Props) {
 
         const updateFromDOM = () => {
             const containerRect = container.getBoundingClientRect()
-            
+
             // Ensure we have valid dimensions
             if (containerRect.width <= 0 || containerRect.height <= 0) return
-            
+
             // In Canvas mode, use the parent container's dimensions for better sizing
             const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
             let actualWidth = containerRect.width
             let actualHeight = containerRect.height
-            
+
             if (isCanvasMode) {
                 // In Canvas mode, sometimes the container dimensions are not accurate
                 // Try to get the actual available space from the parent or canvas dimensions
-                const parentRect = container.parentElement?.getBoundingClientRect()
-                if (parentRect && parentRect.width > containerRect.width && parentRect.height > containerRect.height) {
+                const parentRect =
+                    container.parentElement?.getBoundingClientRect()
+                if (
+                    parentRect &&
+                    parentRect.width > containerRect.width &&
+                    parentRect.height > containerRect.height
+                ) {
                     // Use parent dimensions if they're larger (more accurate for Canvas mode)
                     actualWidth = parentRect.width
                     actualHeight = parentRect.height
                 }
-                
+
                 // Alternative: Use canvas client dimensions if available and larger
                 const canvasClientWidth = canvas.clientWidth
                 const canvasClientHeight = canvas.clientHeight
-                if (canvasClientWidth > actualWidth) actualWidth = canvasClientWidth
-                if (canvasClientHeight > actualHeight) actualHeight = canvasClientHeight
+                if (canvasClientWidth > actualWidth)
+                    actualWidth = canvasClientWidth
+                if (canvasClientHeight > actualHeight)
+                    actualHeight = canvasClientHeight
             }
-            
+
             // Make the mesh fill the entire container (not just the image)
             sizes.set(actualWidth, actualHeight)
             offset.set(0, 0) // Center in container
             mesh.position.set(0, 0, 0)
             mesh.scale.set(actualWidth, actualHeight, 1)
-            
+
             // Update renderer size to match container exactly
             renderer.setSize(actualWidth, actualHeight, false)
-            
+
             // Update camera to match new dimensions
             camera.aspect = actualWidth / actualHeight
             camera.updateProjectionMatrix()
-            
+
             // Ensure camera is positioned correctly for the new dimensions
             camera.position.z = perspective
             camera.lookAt(0, 0, 0)
-            
+
             uniforms.u_planeRes.value.set(actualWidth, actualHeight)
+
+            // Update window size and container offset for consistent noise scaling
+            uniforms.u_windowSize.value.set(
+                window.innerWidth,
+                window.innerHeight
+            )
+            uniforms.u_containerOffset.value.set(
+                containerRect.left,
+                containerRect.top
+            )
 
             // Update aspect ratio uniforms for responsive hover image
             const containerAspect = actualWidth / actualHeight
@@ -424,23 +506,36 @@ export default function Page(props: Props) {
             if (isAnimating) {
                 renderer.render(scene, camera)
             }
-            
+
             // Debug: log dimensions in Canvas mode
             if (isCanvasMode) {
-                console.log('Canvas updateFromDOM - Container:', containerRect.width, 'x', containerRect.height, 'Actual:', actualWidth, 'x', actualHeight, 'Parent:', container.parentElement?.getBoundingClientRect().width, 'x', container.parentElement?.getBoundingClientRect().height)
+                console.log(
+                    "Canvas updateFromDOM - Container:",
+                    containerRect.width,
+                    "x",
+                    containerRect.height,
+                    "Actual:",
+                    actualWidth,
+                    "x",
+                    actualHeight,
+                    "Parent:",
+                    container.parentElement?.getBoundingClientRect().width,
+                    "x",
+                    container.parentElement?.getBoundingClientRect().height
+                )
             }
         }
 
-                // Initial setup - ensure Canvas mode gets proper dimensions
+        // Initial setup - ensure Canvas mode gets proper dimensions
         updateFromDOM()
-        
+
         // Additional update for Canvas mode to ensure proper sizing
         if (RenderTarget.current() === RenderTarget.canvas) {
             // Force multiple updates in Canvas mode to ensure proper sizing
             setTimeout(() => updateFromDOM(), 50)
             setTimeout(() => updateFromDOM(), 150)
             setTimeout(() => updateFromDOM(), 300)
-            
+
             // Debug: log aspect ratios in Canvas mode
             setTimeout(() => {
                 console.log(
@@ -467,7 +562,7 @@ export default function Page(props: Props) {
             // Only animate if:
             // 1. We're in Canvas mode AND preview is enabled, OR
             // 2. We're not in Canvas mode (live website) AND component is in view
-            return (isCanvasMode && preview) || (!isCanvasMode && isInView)
+            return (isCanvasMode && debouncedProps.preview) || (!isCanvasMode && isInView)
         }
 
         const render = () => {
@@ -481,24 +576,39 @@ export default function Page(props: Props) {
             rafId = requestAnimationFrame(render)
 
             uniforms.u_time.value += clock.getDelta()
-            // Update uniforms with current prop values (mapped to internal ranges)
-            uniforms.u_radius.value = mapRadius(radius)
-            uniforms.u_blur.value = mapBlur(blur)
-            uniforms.u_circleBoost.value = mapCircleBoost(circleBoost)
-            uniforms.u_noiseFreq.value = mapNoiseFreq(noiseFreq)
-            uniforms.u_noiseStrength.value = mapNoiseStrength(noiseStrength)
-            uniforms.u_timeSpeed.value = mapTimeSpeed(timeSpeed)
+            
+            // Update uniforms with debounced prop values (mapped to internal ranges)
+            uniforms.u_blur.value = mapBlur(debouncedProps.blur)
+            uniforms.u_circleBoost.value = mapCircleBoost(debouncedProps.circleBoost)
+
+            const currentTextureParams = mapTexture(debouncedProps.texture)
+            uniforms.u_noiseFreq.value = currentTextureParams.freq
+            uniforms.u_noiseStrength.value = currentTextureParams.strength
+            uniforms.u_noiseSize.value = currentTextureParams.size
+
+            uniforms.u_timeSpeed.value = mapTimeSpeed(debouncedProps.timeSpeed)
 
             // Check if we're in Canvas mode and preview is enabled
             const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
-            if (isCanvasMode && preview) {
+            if (isCanvasMode && debouncedProps.preview) {
                 // In Canvas mode with preview enabled, show effect in center
                 targetProgress = 1
                 // Set mouse position to center (0.5, 0.5)
                 uniforms.u_mouse.value.set(0.5, 0.5)
+
+                // Scale radius in Canvas mode to match live preview behavior
+                // Canvas mode needs adjustment to match live preview sizing
+                uniforms.u_radius.value = mapRadius(debouncedProps.radius) * 0.8
+
+                // Also adjust texture parameters in Canvas mode for consistency
+                const canvasTextureParams = mapTexture(debouncedProps.texture * 1.25) // Boost texture in Canvas mode
+                uniforms.u_noiseFreq.value = canvasTextureParams.freq
+                uniforms.u_noiseStrength.value = canvasTextureParams.strength
+                uniforms.u_noiseSize.value = canvasTextureParams.size
             } else {
                 // Normal behavior - use mouse position and hover state
                 // targetProgress will be updated by mouse events
+                uniforms.u_radius.value = mapRadius(debouncedProps.radius)
             }
 
             // ease progress
@@ -560,13 +670,14 @@ export default function Page(props: Props) {
             // Immediate update for critical dimension changes
             entries.forEach((entry) => {
                 const { width, height } = entry.contentRect
-                const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
-                
+                const isCanvasMode =
+                    RenderTarget.current() === RenderTarget.canvas
+
                 // In Canvas mode, be more aggressive about updating on any size change
                 if (isCanvasMode || width !== sizes.x || height !== sizes.y) {
                     // Force immediate update for dimension changes
                     updateFromDOM()
-                    
+
                     // In Canvas mode, also force additional updates with delay
                     if (isCanvasMode) {
                         setTimeout(() => updateFromDOM(), 10)
@@ -607,7 +718,7 @@ export default function Page(props: Props) {
         const onMove = (e: MouseEvent) => {
             // Only handle mouse events if not in Canvas preview mode
             const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
-            if (isCanvasMode && preview) return
+            if (isCanvasMode && debouncedProps.preview) return
 
             // Start animation if not already running
             if (!isAnimating && shouldAnimate()) {
@@ -625,7 +736,7 @@ export default function Page(props: Props) {
         const onEnter = () => {
             // Only handle hover events if not in Canvas preview mode
             const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
-            if (isCanvasMode && preview) return
+            if (isCanvasMode && debouncedProps.preview) return
 
             targetProgress = 1
 
@@ -637,7 +748,7 @@ export default function Page(props: Props) {
         const onLeave = () => {
             // Only handle hover events if not in Canvas preview mode
             const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
-            if (isCanvasMode && preview) return
+            if (isCanvasMode && debouncedProps.preview) return
 
             targetProgress = 0
         }
@@ -664,17 +775,21 @@ export default function Page(props: Props) {
             renderer.dispose()
         }
     }, [
-        radius,
-        blur,
-        circleBoost,
-        noiseFreq,
-        noiseStrength,
-        timeSpeed,
-        preview,
+        debouncedProps.radius,
+        debouncedProps.blur,
+        debouncedProps.circleBoost,
+        debouncedProps.texture,
+        debouncedProps.timeSpeed,
+        debouncedProps.preview,
         imageBase?.positionX,
         imageBase?.positionY,
         imageHover?.positionX,
         imageHover?.positionY,
+        mapRadius,
+        mapBlur,
+        mapCircleBoost,
+        mapTexture,
+        mapTimeSpeed
     ])
 
     return (
@@ -688,7 +803,6 @@ export default function Page(props: Props) {
                 alignItems: "center",
                 justifyContent: "center",
                 ...props.style,
-
             }}
         >
             {/* Base image - always visible */}
@@ -702,7 +816,6 @@ export default function Page(props: Props) {
                     padding: 0,
                     position: "absolute",
                     zIndex: 1,
-
                 }}
             >
                 <img
@@ -710,14 +823,16 @@ export default function Page(props: Props) {
                     src={imageBase?.src}
                     srcSet={imageBase?.srcSet}
                     alt={imageBase?.alt || "Base image"}
+                    draggable={false}
                     style={{
                         width: "100%",
                         height: "100%",
                         objectFit: "cover",
                         objectPosition: `${imageBase?.positionX || "50%"} ${imageBase?.positionY || "50%"}`,
                         margin: 0,
-
                         padding: 0,
+                        userSelect: "none",
+                        pointerEvents: "none",
                     }}
                 />
             </figure>
@@ -735,7 +850,6 @@ export default function Page(props: Props) {
                     height: "100%",
                     zIndex: 3,
                     pointerEvents: "none",
-
                     opacity: 1,
                     // Ensure canvas takes full space in Canvas mode
                     minWidth: "100%",
@@ -748,7 +862,7 @@ export default function Page(props: Props) {
     )
 }
 
-addPropertyControls(Page, {
+addPropertyControls(LiquidMask, {
     preview: {
         type: ControlType.Boolean,
         title: "Preview",
@@ -791,22 +905,13 @@ addPropertyControls(Page, {
         defaultValue: 0.5,
         unit: "",
     },
-    noiseFreq: {
+    texture: {
         type: ControlType.Number,
-        title: "Frequency",
-        min: 1,
-        max: 10,
-        step: 0.1,
-        defaultValue: 5,
-        unit: "",
-    },
-    noiseStrength: {
-        type: ControlType.Number,
-        title: "Noise",
+        title: "Texture",
         min: 0,
         max: 1,
         step: 0.01,
-        defaultValue: 0.3,
+        defaultValue: 0.5,
         unit: "",
     },
     timeSpeed: {
@@ -819,3 +924,5 @@ addPropertyControls(Page, {
         unit: "",
     },
 })
+
+LiquidMask.displayName = "Liquid Mask Dev"

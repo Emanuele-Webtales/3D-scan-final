@@ -32,7 +32,6 @@ interface Props {
     noiseFreq?: number
     noiseStrength?: number
     timeSpeed?: number
-    imageScale?: number
     preview?: boolean
     style?: React.CSSProperties
 }
@@ -65,7 +64,6 @@ export default function Page(props: Props) {
         noiseFreq = 5,
         noiseStrength = 0.3,
         timeSpeed = 5,
-        imageScale = 1.05,
         preview = false
     } = props
     const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -100,14 +98,11 @@ export default function Page(props: Props) {
     }
 
     const mapTimeSpeed = (normalizedTimeSpeed: number) => {
-        // Map 1-10 to 0.02-5.6 (current internal range)
-        return 0.02 + (normalizedTimeSpeed - 1) * (5.58 / 9.0)
+        // Map 0-10 to 0.0-1.0 for true linear mapping from static to fast
+        return normalizedTimeSpeed * 0.1
     }
 
-    const mapImageScale = (normalizedImageScale: number) => {
-        // Map 1-2 to 1.0-1.5 (current internal range)
-        return 1.0 + (normalizedImageScale - 1) * 0.5
-    }
+
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -145,7 +140,13 @@ export default function Page(props: Props) {
         // Load hover image texture for direct rendering
         const loader = new TextureLoader()
         const hoverSrc = imageHover?.src || "/random-assets/blue-profile-image.png"
-        const hoverTexture = loader.load(hoverSrc)
+        const hoverTexture = loader.load(hoverSrc, () => {
+            // Update aspect ratio when texture loads
+            if (hoverTexture.image) {
+                const imageAspect = hoverTexture.image.width / hoverTexture.image.height
+                uniforms.u_hoverImageAspect.value = imageAspect
+            }
+        })
         // Color space for modern three versions
         // @ts-ignore - guard older versions
         if (SRGBColorSpace) {
@@ -166,6 +167,8 @@ export default function Page(props: Props) {
             u_noiseStrength: { value: mapNoiseStrength(noiseStrength) },
             u_timeSpeed: { value: mapTimeSpeed(timeSpeed) },
             u_hoverImage: { value: hoverTexture },
+            u_hoverImageAspect: { value: 1.0 },
+            u_containerAspect: { value: 1.0 },
         }
         uniformsRef.current = uniforms
 
@@ -192,6 +195,8 @@ export default function Page(props: Props) {
       uniform float u_noiseStrength;
       uniform float u_timeSpeed;
       uniform sampler2D u_hoverImage;
+      uniform float u_hoverImageAspect;
+      uniform float u_containerAspect;
 
               // Simplex noise 3D from https://github.com/ashima/webgl-noise
       vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -287,16 +292,34 @@ export default function Page(props: Props) {
         // Aspect ratio corrected noise - uniform scale regardless of component proportions
         float aspectRatio = u_planeRes.x / u_planeRes.y;
         float correctedX = uv.x * aspectRatio;
-        float offx = correctedX + (u_time * 0.1) + sin(uv.y + u_time * 0.1);
-        float offy = uv.y - cos(u_time * 0.001) * 0.01;
-        float n = snoise(vec3(offx * u_noiseFreq, offy * u_noiseFreq, u_time * (u_timeSpeed * 0.1))) - 1.0;
+        
+        // Apply time speed to ALL time-based movement
+        float offx = correctedX + (u_time * u_timeSpeed * 0.1) + sin(uv.y + u_time * u_timeSpeed * 0.1);
+        float offy = uv.y - cos(u_time * u_timeSpeed * 0.001) * 0.01;
+        
+        // Apply time speed to multiple noise layers for more dramatic effect
+        float n1 = snoise(vec3(offx * u_noiseFreq, offy * u_noiseFreq, u_time * u_timeSpeed)) - 1.0;
+        float n2 = snoise(vec3(offx * u_noiseFreq * 0.5, offy * u_noiseFreq * 0.5, u_time * u_timeSpeed * 0.7)) - 1.0;
+        float n = (n1 + n2 * 0.5) * 0.7;
 
         // Pixel-based circle calculation
         float c = circle_pixel(pixelPos, mousePixel, radiusPixels, u_blur, u_planeRes) * u_circleBoost * u_progress;
         float finalMask = smoothstep(0.4, 0.5, (n * u_noiseStrength) + pow(c, 2.0));
 
-        // Sample the hover image and apply the mask
-        vec4 hoverColor = texture2D(u_hoverImage, vUv);
+        // Responsive UV mapping for hover image (maintains aspect ratio like object-fit: cover)
+        vec2 responsiveUV = uv;
+        if (u_hoverImageAspect > u_containerAspect) {
+          // Image is wider than container - scale to fit height
+          float scale = u_containerAspect / u_hoverImageAspect;
+          responsiveUV.x = (uv.x - 0.5) * scale + 0.5;
+        } else {
+          // Image is taller than container - scale to fit width
+          float scale = u_hoverImageAspect / u_containerAspect;
+          responsiveUV.y = (uv.y - 0.5) * scale + 0.5;
+        }
+
+        // Sample the hover image with responsive UV mapping and apply the mask
+        vec4 hoverColor = texture2D(u_hoverImage, responsiveUV);
         
         // Output the hover image with mask applied as alpha
         gl_FragColor = vec4(hoverColor.rgb, hoverColor.a * finalMask);
@@ -324,6 +347,16 @@ export default function Page(props: Props) {
             mesh.position.set(0, 0, 0)
             mesh.scale.set(containerRect.width, containerRect.height, 1)
             uniforms.u_planeRes.value.set(containerRect.width, containerRect.height)
+            
+            // Update aspect ratio uniforms for responsive hover image
+            const containerAspect = containerRect.width / containerRect.height
+            uniforms.u_containerAspect.value = containerAspect
+            
+            // Calculate hover image aspect ratio when texture is loaded
+            if (hoverTexture.image) {
+                const imageAspect = hoverTexture.image.width / hoverTexture.image.height
+                uniforms.u_hoverImageAspect.value = imageAspect
+            }
         }
         updateFromDOM()
 
@@ -494,7 +527,7 @@ export default function Page(props: Props) {
             material.dispose()
             renderer.dispose()
         }
-    }, [radius, blur, circleBoost, noiseFreq, noiseStrength, timeSpeed, imageScale, preview, imageBase?.positionX, imageBase?.positionY, imageHover?.positionX, imageHover?.positionY])
+            }, [radius, blur, circleBoost, noiseFreq, noiseStrength, timeSpeed, preview, imageBase?.positionX, imageBase?.positionY, imageHover?.positionX, imageHover?.positionY])
 
     return (
         <div 
@@ -557,13 +590,20 @@ export default function Page(props: Props) {
 }
 
 addPropertyControls(Page, {
+    preview: {
+      type: ControlType.Boolean,
+      title: "Preview",
+      defaultValue: false,
+      enabledTitle: "On",
+      disabledTitle: "Off",
+  },
     imageBase: {
         type: ControlType.ResponsiveImage,
-        title: "Base Image",
+        title: "Base",
     },
     imageHover: {
         type: ControlType.ResponsiveImage,
-        title: "Hover Image",
+        title: "Hover",
     },
     radius: {
         type: ControlType.Number,
@@ -585,7 +625,7 @@ addPropertyControls(Page, {
     },
     circleBoost: {
         type: ControlType.Number,
-        title: "Circle Boost",
+        title: "Boost",
         min: 0,
         max: 1,
         step: 0.01,
@@ -594,7 +634,7 @@ addPropertyControls(Page, {
     },
     noiseFreq: {
         type: ControlType.Number,
-        title: "Noise Frequency",
+        title: "Frequency",
         min: 1,
         max: 10,
         step: 0.1,
@@ -604,37 +644,23 @@ addPropertyControls(Page, {
     },
     noiseStrength: {
         type: ControlType.Number,
-        title: "Noise Strength",
+        title: "Noise",
         min: 0,
         max: 1,
         step: 0.01,
         defaultValue: 0.3,
         unit: "",
-       
+        
     },
     timeSpeed: {
         type: ControlType.Number,
-        title: "Time Speed",
-        min: 1,
+        title: "Speed",
+        min: 0,
         max: 10,
-        step: 0.1,
+        step: 0.5,
         defaultValue: 5,
         unit: "",
     },
-    imageScale: {
-        type: ControlType.Number,
-        title: "Image Scale",
-        min: 1,
-        max: 2,
-        step: 0.01,
-        defaultValue: 1.05,
-        unit: "",
-    },
-    preview: {
-        type: ControlType.Boolean,
-        title: "Preview in Canvas",
-        defaultValue: false,
-        enabledTitle: "On",
-        disabledTitle: "Off",
-    },
+
+
 })

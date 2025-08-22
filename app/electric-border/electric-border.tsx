@@ -6,17 +6,26 @@ interface ElectricBorderProps {
     preview?: boolean
     showGlow?: boolean
     glowIntensity?: number
+    borderRadius?: number
+    borderThickness?: number
 }
 
 /**
- * @framerSupportedLayoutWidth any
- * @framerSupportedLayoutHeight any
+ * @framerSupportedLayoutWidth fixed
+ * @framerSupportedLayoutHeight fixed
  * @framerIntrinsicWidth 300
- * @framerIntrinsicHeight 500
+ * @framerIntrinsicHeight 400
  * @framerDisableUnlink
  */
 export default function ElectricBorder(props: ElectricBorderProps) {
-    const { borderColor = "#dd8448", preview = false, showGlow = true, glowIntensity = 0.6 } = props
+    const {
+        borderColor = "#dd8448",
+        preview = false,
+        showGlow = true,
+        glowIntensity = 0.6,
+        borderRadius = 24,
+        borderThickness = 2,
+    } = props
 
     const shouldAnimate =
         RenderTarget.current() === RenderTarget.preview ||
@@ -32,7 +41,6 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                 alignItems: "center",
                 justifyContent: "center",
                 position: "relative",
-               
             }}
         >
             <svg
@@ -41,22 +49,21 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                     overflow: "visible",
                     width: "100%",
                     height: "100%",
-                   
                 }}
             >
                 <defs>
                     <filter
                         id="turbulent-displace"
                         colorInterpolationFilters="sRGB"
-                        x="-10%"
-                        y="-10%"
-                        width="120%"
-                        height="120%"
+                        x="-20%"
+                        y="-20%"
+                        width="140%"
+                        height="140%"
                     >
                         <feTurbulence
                             type="turbulence"
-                            baseFrequency="0.02"
-                            numOctaves="10"
+                            baseFrequency="0.015"
+                            numOctaves="8"
                             result="noise1"
                             seed="1"
                         />
@@ -169,7 +176,32 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                         <feDisplacementMap
                             in="SourceGraphic"
                             in2="combinedNoise"
-                            scale="30"
+                            scale="20"
+                            xChannelSelector="R"
+                            yChannelSelector="B"
+                        />
+                    </filter>
+
+                    {/* Fallback filter for better consistency */}
+                    <filter
+                        id="turbulent-displace-fallback"
+                        colorInterpolationFilters="sRGB"
+                        x="-20%"
+                        y="-20%"
+                        width="140%"
+                        height="140%"
+                    >
+                        <feTurbulence
+                            type="turbulence"
+                            baseFrequency="0.02"
+                            numOctaves="6"
+                            result="noise"
+                            seed="3"
+                        />
+                        <feDisplacementMap
+                            in="SourceGraphic"
+                            in2="noise"
+                            scale="15"
                             xChannelSelector="R"
                             yChannelSelector="B"
                         />
@@ -179,7 +211,7 @@ export default function ElectricBorder(props: ElectricBorderProps) {
 
             <div
                 style={{
-                    borderRadius: "24px",
+                    borderRadius: `${borderRadius}px`,
                     position: "relative",
                     width: "100%",
                     height: "100%",
@@ -193,12 +225,12 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                 <div
                     style={{
                         position: "absolute",
-                        top: "-4px",
-                        left: "-4px",
-                        right: "4px",
-                        bottom: "4px",
-                        border: `2px solid ${borderColor}`,
-                        borderRadius: "24px",
+                        top: `calc(-${borderThickness / 2}px - 4px)`,
+                        left: `calc(-${borderThickness / 2}px - 4px)`,
+                        right: `calc(-${borderThickness / 2}px + 2px)`,
+                        bottom: `calc(-${borderThickness / 2}px + 2px)`,
+                        border: `${borderThickness}px solid ${borderColor}`,
+                        borderRadius: `${borderRadius}px`,
                         filter: "url(#turbulent-displace)",
                         pointerEvents: "none",
                         zIndex: 10,
@@ -206,15 +238,18 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                         padding: "0",
                     }}
                 />
-
                 {/* Glow layers - only shown when showGlow is true */}
                 {showGlow && (
                     <>
                         {/* Glow layer 1 - subtle blur */}
                         <div
                             style={{
-                                border: `2px solid ${borderColor}${Math.floor(glowIntensity * 255).toString(16).padStart(2, '0')}`,
-                                borderRadius: "24px",
+                                border: `${borderThickness}px solid ${borderColor}${Math.floor(
+                                    glowIntensity * 255
+                                )
+                                    .toString(16)
+                                    .padStart(2, "0")}`,
+                                borderRadius: `${borderRadius}px`,
                                 width: "100%",
                                 height: "100%",
                                 position: "absolute",
@@ -233,8 +268,12 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                         {/* Glow layer 2 - medium blur */}
                         <div
                             style={{
-                                border: `2px solid ${borderColor}${Math.floor(glowIntensity * 255).toString(16).padStart(2, '0')}`,
-                                borderRadius: "24px",
+                                border: `${borderThickness}px solid ${borderColor}${Math.floor(
+                                    glowIntensity * 255
+                                )
+                                    .toString(16)
+                                    .padStart(2, "0")}`,
+                                borderRadius: `${borderRadius}px`,
                                 width: "100%",
                                 height: "100%",
                                 position: "absolute",
@@ -258,7 +297,7 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                                 left: 0,
                                 right: 0,
                                 bottom: 0,
-                                borderRadius: "24px",
+                                borderRadius: `${borderRadius}px`,
                                 opacity: glowIntensity,
                                 mixBlendMode: "overlay",
                                 transform: "scale(1.1)",
@@ -279,7 +318,7 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                                 left: 0,
                                 right: 0,
                                 bottom: 0,
-                                borderRadius: "24px",
+                                borderRadius: `${borderRadius}px`,
                                 opacity: glowIntensity * 0.5,
                                 mixBlendMode: "overlay",
                                 transform: "scale(1.1)",
@@ -300,7 +339,7 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                                 left: 0,
                                 right: 0,
                                 bottom: 0,
-                                borderRadius: "24px",
+                                borderRadius: `${borderRadius}px`,
                                 filter: "blur(32px)",
                                 transform: "scale(1.1)",
                                 opacity: glowIntensity * 0.3,
@@ -355,23 +394,40 @@ addPropertyControls(ElectricBorder, {
     },
     showGlow: {
         type: ControlType.Boolean,
-        title: "Show Glow",
+        title: "Glow",
         defaultValue: true,
-        description: "Enable or disable the glow effects around the border"
     },
     glowIntensity: {
         type: ControlType.Number,
-        title: "Glow Intensity",
+        title: "Intensity",
         min: 0.1,
         max: 1,
         step: 0.1,
         defaultValue: 0.6,
-        description: "Controls the intensity of the glow effects",
-        hidden: (props) => !props.showGlow
+
+        hidden: (props) => !props.showGlow,
+    },
+    borderRadius: {
+        type: ControlType.Number,
+        title: "Radius",
+        min: 0,
+        max: 100,
+        step: 1,
+        defaultValue: 24,
+        unit:"px"
+    },
+    borderThickness: {
+        type: ControlType.Number,
+        title: "Border",
+        min: 1,
+        max: 10,
+        step: 1,
+        defaultValue: 2,
+        unit: "px",
     },
     borderColor: {
         type: ControlType.Color,
-        title: "Border Color",
+        title: "Color",
         defaultValue: "#dd8448",
         description:
             "More components at [Framer University](https://frameruni.link/cc).",

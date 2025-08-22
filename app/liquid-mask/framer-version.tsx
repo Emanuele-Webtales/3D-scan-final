@@ -180,26 +180,23 @@ export default function LiquidMask(props: Props) {
         })
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 
-        // Get container dimensions instead of viewport
-        const containerRect = container.getBoundingClientRect()
-
-        // For initial sizing, ensure we have valid dimensions
-        const initialWidth = Math.max(containerRect.width, 300) // Fallback minimum
-        const initialHeight = Math.max(containerRect.height, 200) // Fallback minimum
+        // Use clientWidth/clientHeight for more reliable initial sizing
+        const initialWidth = Math.max(container.clientWidth, 300) // Fallback minimum
+        const initialHeight = Math.max(container.clientHeight, 200) // Fallback minimum
         renderer.setSize(initialWidth, initialHeight)
 
         const computeFov = () => {
-            const containerRect = container.getBoundingClientRect()
+            // Use clientHeight for consistent field of view calculation
             return (
                 (180 *
-                    (2 * Math.atan(containerRect.height / 2 / perspective))) /
+                    (2 * Math.atan(container.clientHeight / 2 / perspective))) /
                 Math.PI
             )
         }
 
         const camera = new PerspectiveCamera(
             computeFov(),
-            containerRect.width / containerRect.height,
+            initialWidth / initialHeight,
             1,
             5000
         )
@@ -437,39 +434,9 @@ export default function LiquidMask(props: Props) {
         const offset = new Vector2()
 
         const updateFromDOM = () => {
-            const containerRect = container.getBoundingClientRect()
-
-            // Ensure we have valid dimensions
-            if (containerRect.width <= 0 || containerRect.height <= 0) return
-
-            // In Canvas mode, use the parent container's dimensions for better sizing
-            const isCanvasMode = RenderTarget.current() === RenderTarget.canvas
-            let actualWidth = containerRect.width
-            let actualHeight = containerRect.height
-
-            if (isCanvasMode) {
-                // In Canvas mode, sometimes the container dimensions are not accurate
-                // Try to get the actual available space from the parent or canvas dimensions
-                const parentRect =
-                    container.parentElement?.getBoundingClientRect()
-                if (
-                    parentRect &&
-                    parentRect.width > containerRect.width &&
-                    parentRect.height > containerRect.height
-                ) {
-                    // Use parent dimensions if they're larger (more accurate for Canvas mode)
-                    actualWidth = parentRect.width
-                    actualHeight = parentRect.height
-                }
-
-                // Alternative: Use canvas client dimensions if available and larger
-                const canvasClientWidth = canvas.clientWidth
-                const canvasClientHeight = canvas.clientHeight
-                if (canvasClientWidth > actualWidth)
-                    actualWidth = canvasClientWidth
-                if (canvasClientHeight > actualHeight)
-                    actualHeight = canvasClientHeight
-            }
+            // Use clientWidth/clientHeight for more reliable sizing
+            const actualWidth = Math.max(container.clientWidth, 2)
+            const actualHeight = Math.max(container.clientHeight, 2)
 
             // Make the mesh fill the entire container (not just the image)
             sizes.set(actualWidth, actualHeight)
@@ -495,6 +462,9 @@ export default function LiquidMask(props: Props) {
                 window.innerWidth,
                 window.innerHeight
             )
+            
+            // Get container position for offset calculations
+            const containerRect = container.getBoundingClientRect()
             uniforms.u_containerOffset.value.set(
                 containerRect.left,
                 containerRect.top
@@ -515,46 +485,9 @@ export default function LiquidMask(props: Props) {
             if (isAnimating) {
                 renderer.render(scene, camera)
             }
-
-            // Debug: log dimensions in Canvas mode
-            if (isCanvasMode) {
-                console.log(
-                    "Canvas updateFromDOM - Container:",
-                    containerRect.width,
-                    "x",
-                    containerRect.height,
-                    "Actual:",
-                    actualWidth,
-                    "x",
-                    actualHeight,
-                    "Parent:",
-                    container.parentElement?.getBoundingClientRect().width,
-                    "x",
-                    container.parentElement?.getBoundingClientRect().height
-                )
-            }
         }
 
-        // Initial setup - ensure Canvas mode gets proper dimensions
-        updateFromDOM()
-
-        // Additional update for Canvas mode to ensure proper sizing
-        if (RenderTarget.current() === RenderTarget.canvas) {
-            // Force multiple updates in Canvas mode to ensure proper sizing
-            setTimeout(() => updateFromDOM(), 50)
-            setTimeout(() => updateFromDOM(), 150)
-            setTimeout(() => updateFromDOM(), 300)
-
-            // Debug: log aspect ratios in Canvas mode
-            setTimeout(() => {
-                console.log(
-                    "Canvas mode - Container aspect:",
-                    uniforms.u_containerAspect.value,
-                    "Image aspect:",
-                    uniforms.u_hoverImageAspect.value
-                )
-            }, 350)
-        }
+        // Initial setup
         updateFromDOM()
 
         let targetProgress = 0
@@ -609,22 +542,17 @@ export default function LiquidMask(props: Props) {
                 targetProgress = 1
                 // Set mouse position to center (0.5, 0.5)
                 uniforms.u_mouse.value.set(0.5, 0.5)
-
-                // Scale radius in Canvas mode to match live preview behavior
-                // Canvas mode needs adjustment to match live preview sizing
-                uniforms.u_radius.value = mapRadius(debouncedProps.radius) * 0.8
-
-                // Also adjust texture parameters in Canvas mode for consistency
-                const canvasTextureParams = mapTexture(
-                    debouncedProps.texture * 1.25
-                ) // Boost texture in Canvas mode
-                uniforms.u_noiseFreq.value = canvasTextureParams.freq
-                uniforms.u_noiseStrength.value = canvasTextureParams.strength
-                uniforms.u_noiseSize.value = canvasTextureParams.size
+                // Use normal radius (no scaling needed with proper dimension detection)
+                uniforms.u_radius.value = mapRadius(debouncedProps.radius)
+                
+                uniforms.u_noiseFreq.value = currentTextureParams.freq * 1.25
+                // Boost noise intensity by 10% in Canvas mode to match live preview
+                //uniforms.u_noiseStrength.value = currentTextureParams.strength * 1.5
             } else {
                 // Normal behavior - use mouse position and hover state
                 // targetProgress will be updated by mouse events
                 uniforms.u_radius.value = mapRadius(debouncedProps.radius)
+                uniforms.u_noiseStrength.value = currentTextureParams.strength
             }
 
             // ease progress
@@ -646,29 +574,6 @@ export default function LiquidMask(props: Props) {
             if (resizeTimeout) return
 
             resizeTimeout = setTimeout(() => {
-                const containerRect = container.getBoundingClientRect()
-                renderer.setSize(containerRect.width, containerRect.height)
-                camera.aspect = containerRect.width / containerRect.height
-                camera.fov = computeFov()
-                camera.updateProjectionMatrix()
-
-                // Update all resolution-related uniforms
-                if (uniforms.u_resolution)
-                    uniforms.u_resolution.value.set(
-                        containerRect.width,
-                        containerRect.height
-                    )
-                if (uniforms.u_res)
-                    uniforms.u_res.value.set(
-                        containerRect.width,
-                        containerRect.height
-                    )
-                if (uniforms.u_pr)
-                    uniforms.u_pr.value = Math.min(
-                        window.devicePixelRatio || 1,
-                        2
-                    )
-
                 // Update DOM and force re-render
                 updateFromDOM()
 
@@ -686,19 +591,10 @@ export default function LiquidMask(props: Props) {
             // Immediate update for critical dimension changes
             entries.forEach((entry) => {
                 const { width, height } = entry.contentRect
-                const isCanvasMode =
-                    RenderTarget.current() === RenderTarget.canvas
-
-                // In Canvas mode, be more aggressive about updating on any size change
-                if (isCanvasMode || width !== sizes.x || height !== sizes.y) {
-                    // Force immediate update for dimension changes
+                
+                // Update if dimensions have changed
+                if (width !== sizes.x || height !== sizes.y) {
                     updateFromDOM()
-
-                    // In Canvas mode, also force additional updates with delay
-                    if (isCanvasMode) {
-                        setTimeout(() => updateFromDOM(), 10)
-                        setTimeout(() => updateFromDOM(), 50)
-                    }
                 }
             })
             // Also use throttled resize for performance
@@ -869,7 +765,6 @@ export default function LiquidMask(props: Props) {
                     zIndex: 3,
                     pointerEvents: "none",
                     opacity: 1,
-                    // Ensure canvas takes full space in Canvas mode
                     minWidth: "100%",
                     minHeight: "100%",
                     maxWidth: "100%",

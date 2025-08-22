@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
+import { ComponentMessage } from "https://framer.com/m/Utils-FINc.js"
 
 // Imports are to be considered correct
 import {
@@ -29,15 +30,15 @@ type Props = {
     strength?: number
     centerX?: number
     centerY?: number
-    preview?: boolean
     style?: React.CSSProperties
 }
 
 /**
- * Base bulge distortion (Codrops tutorial) implemented as a Framer code component.
- * - Uses a raw Three.js canvas filling its parent (no 100vh/vw)
- * - Object-fit: cover behavior handled in shader via resizeUvCover
- * - Bulge parameters exposed as controls
+ * @framerSupportedLayoutWidth fixed
+ * @framerSupportedLayoutHeight fixed
+ * @framerIntrinsicWidth 300
+ * @framerIntrinsicHeight 400
+ * @framerDisableUnlink
  */
 export default function BulgeDistortion(props: Props) {
     const {
@@ -46,7 +47,6 @@ export default function BulgeDistortion(props: Props) {
         strength = 1.1,
         centerX = 0.5,
         centerY = 0.5,
-        preview = false,
         style,
     } = props
 
@@ -60,16 +60,23 @@ export default function BulgeDistortion(props: Props) {
         if (!container || !canvas) return
 
         const scene = new Scene()
-        const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true })
+        const renderer = new WebGLRenderer({
+            canvas,
+            antialias: true,
+            alpha: true,
+        })
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
 
         // Sizing helpers
         const setSize = () => {
-            const rect = container.getBoundingClientRect()
-            const w = Math.max(rect.width, 2)
-            const h = Math.max(rect.height, 2)
+            // Use clientWidth/clientHeight for more reliable sizing
+            const w = Math.max(container.clientWidth, 2)
+            const h = Math.max(container.clientHeight, 2)
             renderer.setSize(w, h, false)
             camera.aspect = w / h
+            // Update camera field of view based on new height
+            const perspective = 800
+            camera.fov = (180 * (2 * Math.atan(h / 2 / perspective))) / Math.PI
             camera.updateProjectionMatrix()
             uniforms.uResolution.value.set(w, h)
         }
@@ -246,8 +253,12 @@ export default function BulgeDistortion(props: Props) {
 
         // Initial sizing and plane scale to fill container
         const updatePlane = () => {
-            const rect = container.getBoundingClientRect()
-            mesh.scale.set(rect.width, rect.height, 1)
+            // Use clientWidth/clientHeight instead of getBoundingClientRect for more reliable sizing
+            const width = container.clientWidth
+            const height = container.clientHeight
+            // Ensure the plane fills the entire container without padding
+            mesh.scale.set(width, height, 1)
+            // Center the mesh exactly in the container
             mesh.position.set(0, 0, 0)
         }
 
@@ -300,13 +311,8 @@ export default function BulgeDistortion(props: Props) {
             raf = requestAnimationFrame(loop)
             render()
         }
-        // Run only when visible in live site; always in Canvas preview if preview flag is on
-        const shouldAnimate = () => {
-            const isCanvas = RenderTarget.current() === RenderTarget.canvas
-            if (isCanvas) return preview
-            return true
-        }
-        if (shouldAnimate()) loop()
+        // Always run animation loop
+        loop()
 
         // Initialize mouse at props center
         uniforms.uMousePosition.value.set(centerX, centerY)
@@ -324,7 +330,7 @@ export default function BulgeDistortion(props: Props) {
             material.dispose()
             renderer.dispose()
         }
-    }, [image?.src, radius, strength, centerX, centerY, preview])
+    }, [image?.src, radius, strength, centerX, centerY])
 
     // If no image yet, show helpful message
     const hasImage = !!(image && image.src)
@@ -336,88 +342,62 @@ export default function BulgeDistortion(props: Props) {
                 width: "100%",
                 height: "100%",
                 position: "relative",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                display: "block",
+                margin: 0,
+                padding: 0,
                 ...style,
             }}
         >
-            {!hasImage && (
-                <div
+            {/* White background container */}
+            <div
+                style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: "100%",
+
+                    margin: 0,
+                    padding: 0,
+                }}
+            />
+
+            {!hasImage ? (
+                <ComponentMessage
+                    style={{
+                        position: "relative",
+                        width: "100%",
+                        height: "100%",
+                        minWidth: 0,
+                        minHeight: 0,
+                    }}
+                    title="3D Image Distortion"
+                    description="Add an Image and to see a cool reverse fish eye effect"
+                />
+            ) : (
+                <canvas
+                    ref={canvasRef}
                     style={{
                         position: "absolute",
                         inset: 0,
+                        width: "100%",
+                        height: "100%",
                         display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: "#999",
-                        fontSize: 14,
+                        margin: 0,
+                        padding: 0,
+                        zIndex: 2,
                     }}
-                >
-                    Add an image in the right panel to see the bulge effect
-                </div>
+                />
             )}
-
-            <canvas
-                ref={canvasRef}
-                style={{
-                    position: "absolute",
-                    inset: 0,
-                    width: "100%",
-                    height: "100%",
-                    display: "block",
-                }}
-            />
         </div>
     )
 }
 
-BulgeDistortion.displayName = "Bulge Distortion (Base)"
-
 addPropertyControls(BulgeDistortion, {
-    preview: {
-        type: ControlType.Boolean,
-        title: "Preview",
-        defaultValue: true,
-        enabledTitle: "On",
-        disabledTitle: "Off",
-    },
     image: {
         type: ControlType.ResponsiveImage,
         title: "Image",
     },
-    radius: {
-        type: ControlType.Number,
-        title: "Radius",
-        min: 0.1,
-        max: 2.0,
-        step: 0.01,
-        defaultValue: 0.6,
-    },
-    strength: {
-        type: ControlType.Number,
-        title: "Strength",
-        min: 0.0,
-        max: 3.0,
-        step: 0.01,
-        defaultValue: 1.1,
-    },
-    centerX: {
-        type: ControlType.Number,
-        title: "Center X",
-        min: 0,
-        max: 1,
-        step: 0.001,
-        defaultValue: 0.5,
-    },
-    centerY: {
-        type: ControlType.Number,
-        title: "Center Y",
-        min: 0,
-        max: 1,
-        step: 0.001,
-        defaultValue: 0.5,
-    },
 })
 
-
+BulgeDistortion.displayName = "3D Image Distortion"

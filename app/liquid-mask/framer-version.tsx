@@ -27,6 +27,7 @@ interface ResponsiveImageValue {
 interface Props {
     imageBase?: ResponsiveImageValue
     imageHover?: ResponsiveImageValue
+    borderRadius?: number
     radius?: number
     blur?: number
     circleBoost?: number
@@ -37,17 +38,18 @@ interface Props {
 }
 
 /**
- * @framerDisableUnlink
- * @framerSupportedLayoutWidth any
- * @framerSupportedLayoutHeight any
+ * @framerSupportedLayoutWidth fixed
+ * @framerSupportedLayoutHeight fixed
  * @framerIntrinsicWidth 300
- * @framerIntrinsicHeight 500
+ * @framerIntrinsicHeight 400
+ * @framerDisableUnlink
  */
 export default function LiquidMask(props: Props) {
     const {
         imageBase,
         imageHover,
-        radius = 50,
+        borderRadius = 10,
+        radius = 100,
         blur = 0.5,
         circleBoost = 0.5,
         texture = 0.5,
@@ -62,7 +64,12 @@ export default function LiquidMask(props: Props) {
     if (!hasBaseImage) {
         return (
             <div
-                style={{ height: "100%", width: "100%", position: "relative" }}
+                style={{
+                    height: "100%",
+                    width: "100%",
+                    position: "relative",
+                    borderRadius: borderRadius,
+                }}
             >
                 <div
                     style={{
@@ -94,7 +101,7 @@ export default function LiquidMask(props: Props) {
     const imgRef = useRef<HTMLImageElement | null>(null)
     const containerRef = useRef<HTMLDivElement | null>(null)
     const uniformsRef = useRef<any>(null)
-    
+
     // Debounced prop values to prevent excessive re-renders
     const [debouncedProps, setDebouncedProps] = useState({
         radius,
@@ -102,7 +109,7 @@ export default function LiquidMask(props: Props) {
         circleBoost,
         texture,
         timeSpeed,
-        preview
+        preview,
     })
 
     // Debounce prop changes to improve performance
@@ -114,7 +121,7 @@ export default function LiquidMask(props: Props) {
                 circleBoost,
                 texture,
                 timeSpeed,
-                preview
+                preview,
             })
         }, 100) // 100ms debounce
 
@@ -232,7 +239,9 @@ export default function LiquidMask(props: Props) {
             u_planeRes: { value: new Vector2(1, 1) },
             u_radius: { value: mapRadius(debouncedProps.radius) },
             u_blur: { value: mapBlur(debouncedProps.blur) },
-            u_circleBoost: { value: mapCircleBoost(debouncedProps.circleBoost) },
+            u_circleBoost: {
+                value: mapCircleBoost(debouncedProps.circleBoost),
+            },
             u_noiseFreq: { value: textureParams.freq },
             u_noiseStrength: { value: textureParams.strength },
             u_noiseSize: { value: textureParams.size },
@@ -562,7 +571,10 @@ export default function LiquidMask(props: Props) {
             // Only animate if:
             // 1. We're in Canvas mode AND preview is enabled, OR
             // 2. We're not in Canvas mode (live website) AND component is in view
-            return (isCanvasMode && debouncedProps.preview) || (!isCanvasMode && isInView)
+            return (
+                (isCanvasMode && debouncedProps.preview) ||
+                (!isCanvasMode && isInView)
+            )
         }
 
         const render = () => {
@@ -576,10 +588,12 @@ export default function LiquidMask(props: Props) {
             rafId = requestAnimationFrame(render)
 
             uniforms.u_time.value += clock.getDelta()
-            
+
             // Update uniforms with debounced prop values (mapped to internal ranges)
             uniforms.u_blur.value = mapBlur(debouncedProps.blur)
-            uniforms.u_circleBoost.value = mapCircleBoost(debouncedProps.circleBoost)
+            uniforms.u_circleBoost.value = mapCircleBoost(
+                debouncedProps.circleBoost
+            )
 
             const currentTextureParams = mapTexture(debouncedProps.texture)
             uniforms.u_noiseFreq.value = currentTextureParams.freq
@@ -601,7 +615,9 @@ export default function LiquidMask(props: Props) {
                 uniforms.u_radius.value = mapRadius(debouncedProps.radius) * 0.8
 
                 // Also adjust texture parameters in Canvas mode for consistency
-                const canvasTextureParams = mapTexture(debouncedProps.texture * 1.25) // Boost texture in Canvas mode
+                const canvasTextureParams = mapTexture(
+                    debouncedProps.texture * 1.25
+                ) // Boost texture in Canvas mode
                 uniforms.u_noiseFreq.value = canvasTextureParams.freq
                 uniforms.u_noiseStrength.value = canvasTextureParams.strength
                 uniforms.u_noiseSize.value = canvasTextureParams.size
@@ -789,7 +805,7 @@ export default function LiquidMask(props: Props) {
         mapBlur,
         mapCircleBoost,
         mapTexture,
-        mapTimeSpeed
+        mapTimeSpeed,
     ])
 
     return (
@@ -802,6 +818,8 @@ export default function LiquidMask(props: Props) {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                borderRadius: borderRadius,
+                overflow: "clip",
                 ...props.style,
             }}
         >
@@ -878,13 +896,22 @@ addPropertyControls(LiquidMask, {
         type: ControlType.ResponsiveImage,
         title: "Hover",
     },
+    borderRadius: {
+        type: ControlType.Number,
+        title: "Border radius",
+        min: 0,
+        max: 100,
+        step: 1,
+        defaultValue: 10,
+        unit: "px",
+    },
     radius: {
         type: ControlType.Number,
-        title: "Radius",
+        title: "Size",
         min: 10,
         max: 1000,
         step: 10,
-        defaultValue: 50,
+        defaultValue: 100,
         unit: "px",
     },
     blur: {
@@ -922,7 +949,9 @@ addPropertyControls(LiquidMask, {
         step: 0.5,
         defaultValue: 5,
         unit: "",
+        description:
+            "More components at [Framer University](https://frameruni.link/cc).",
     },
 })
 
-LiquidMask.displayName = "Liquid Mask Dev"
+LiquidMask.displayName = "Liquid Mask"

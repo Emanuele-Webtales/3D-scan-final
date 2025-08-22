@@ -109,6 +109,19 @@ export default function LiquidMask(props: Props) {
     const containerRef = useRef<HTMLDivElement | null>(null)
     const uniformsRef = useRef<any>(null)
 
+    // Detect mobile: disable effect and show base image only
+    const [isMobile, setIsMobile] = useState(false)
+    useEffect(() => {
+        const checkMobile = () => {
+            const coarse = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(pointer: coarse)").matches : false
+            const small = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(max-width: 768px)").matches : false
+            setIsMobile(coarse || small)
+        }
+        checkMobile()
+        window.addEventListener("resize", checkMobile)
+        return () => window.removeEventListener("resize", checkMobile)
+    }, [])
+
     // Motion/value state for hover scaling
     const scaleMV = useMotionValue(1)
     const [springOptions, setSpringOptions] = useState<any>(() => ({ stiffness: 170, damping: 26, mass: 1 }))
@@ -261,6 +274,7 @@ export default function LiquidMask(props: Props) {
     }, [])
 
     useEffect(() => {
+        if (isMobile) return
         const canvas = canvasRef.current
         const imgEl = imgRef.current
         const container = containerRef.current
@@ -811,6 +825,7 @@ export default function LiquidMask(props: Props) {
         mapCircleBoost,
         mapTexture,
         mapTimeSpeed,
+        isMobile,
     ])
 
     return (
@@ -862,24 +877,26 @@ export default function LiquidMask(props: Props) {
 
             {/* Hover image rendered by canvas - no DOM element needed */}
 
-            {/* Three.js canvas - renders hover effect */}
-            <canvas
-                ref={canvasRef}
-                id="stage"
-                style={{
-                    position: "absolute",
-                    inset: 0,
-                    width: "100%",
-                    height: "100%",
-                    zIndex: 3,
-                    pointerEvents: "none",
-                    opacity: 1,
-                    minWidth: "100%",
-                    minHeight: "100%",
-                    maxWidth: "100%",
-                    maxHeight: "100%",
-                }}
-            />
+            {/* Three.js canvas - renders hover effect (hidden on mobile) */}
+            {!isMobile && (
+                <canvas
+                    ref={canvasRef}
+                    id="stage"
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        width: "100%",
+                        height: "100%",
+                        zIndex: 3,
+                        pointerEvents: "none",
+                        opacity: 1,
+                        minWidth: "100%",
+                        minHeight: "100%",
+                        maxWidth: "100%",
+                        maxHeight: "100%",
+                    }}
+                />
+            )}
         </div>
     )
 }

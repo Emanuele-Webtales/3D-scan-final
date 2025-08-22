@@ -1014,7 +1014,7 @@ addPropertyControls(LiquidMask, {
             enabled: {
                 type: ControlType.Boolean,
                 title: "Enabled",
-                defaultValue: true,
+                defaultValue: false,
                 enabledTitle: "On",
                 disabledTitle: "Off",
             },
@@ -1026,7 +1026,7 @@ addPropertyControls(LiquidMask, {
                 step: 0.1,
                 defaultValue: 1.2,
                 unit: "x",
-                hidden: (props) => !(props.hover && props.hover.enabled),
+                hidden: (props) => !props.enabled,
             },
             transition: {
                 type: ControlType.Transition,
@@ -1037,7 +1037,7 @@ addPropertyControls(LiquidMask, {
                     ease: [0.44, 0, 0.56, 1],
                     delay: 0,
                 },
-                hidden: (props) => !(props.hover && props.hover.enabled),
+                hidden: (props) => !props.enabled,
             },
         },
     },

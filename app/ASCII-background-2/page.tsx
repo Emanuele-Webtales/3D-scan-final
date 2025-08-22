@@ -421,7 +421,7 @@ export default function ASCIIBackground(props: ASCIIBackgroundProps) {
         return sanitized.length > 0 ? sanitized : DEFAULT_CHARACTERS
     })()
 
-    // If not in Framer's canvas, always play
+    // In Framer canvas, disable animation to prevent freezes; play elsewhere
     const isCanvas = (() => {
         try {
             return FramerRenderTarget.current() === FramerRenderTarget.canvas
@@ -429,7 +429,7 @@ export default function ASCIIBackground(props: ASCIIBackgroundProps) {
             return false
         }
     })()
-    const effectivePlay = isCanvas ? play : true
+    const effectivePlay = isCanvas ? false : true
 
     const canvasContainerRef = useRef<HTMLDivElement | null>(null)
     const perlinProgramRef = useRef<any | null>(null)
@@ -479,6 +479,11 @@ export default function ASCIIBackground(props: ASCIIBackgroundProps) {
     }
 
     useEffect(() => {
+        // Skip WebGL setup entirely if in Framer canvas to prevent freezes
+        if (isCanvas) {
+            return
+        }
+
         let rafId = 0
         let resizeHandler: (() => void) | null = null
         let resizeObserver: any | null = null
@@ -756,6 +761,11 @@ export default function ASCIIBackground(props: ASCIIBackgroundProps) {
 
     // live update uniforms when props change
     useEffect(() => {
+        // Skip uniform updates if in Framer canvas
+        if (isCanvas) {
+            return
+        }
+
         const perlin = perlinProgramRef.current
         if (perlin) {
             perlin.uniforms.uFrequency.value = mapFrequencyUiToShader(frequency)
@@ -878,6 +888,11 @@ export default function ASCIIBackground(props: ASCIIBackgroundProps) {
 
     // Play/pause controller for RAF lifecycle
     useEffect(() => {
+        // Skip RAF management if in Framer canvas
+        if (isCanvas) {
+            return
+        }
+
         isPlayingRef.current = effectivePlay
         if (!rendererRef.current) return
         if (effectivePlay) {
@@ -954,22 +969,43 @@ export default function ASCIIBackground(props: ASCIIBackgroundProps) {
                 ...style,
             }}
         >
+            {/* Show static background when in Framer canvas */}
+            {isCanvas && (
+                <div
+                    style={{
+                        position: "absolute",
+                        inset: 0,
+                        background: bgColor,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: color1Effective,
+                        fontSize: "24px",
+                        fontFamily: "monospace",
+                    }}
+                >
+                    ASCII Background (Static in Canvas)
+                </div>
+            )}
             {/* Invisible sizing element to provide intrinsic dimensions in Fit layouts */}
             <div
                 style={{
                     width: `${INTRINSIC_WIDTH}px`,
                     height: `${INTRINSIC_HEIGHT}px`,
                     minWidth: `${INTRINSIC_WIDTH}px`,
-                    minHeight: `${INTRINSIC_HEIGHT}px`,
+                    minHeight: `${INTRINSIC_WIDTH}px`,
                     visibility: "hidden",
                     position: "absolute",
                     pointerEvents: "none",
                 }}
             />
-            <div
-                ref={canvasContainerRef}
-                style={{ position: "absolute", inset: 0 }}
-            />
+            {/* Only render WebGL canvas when not in Framer canvas */}
+            {!isCanvas && (
+                <div
+                    ref={canvasContainerRef}
+                    style={{ position: "absolute", inset: 0 }}
+                />
+            )}
         </div>
     )
 }

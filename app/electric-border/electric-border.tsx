@@ -1,10 +1,11 @@
-import React from "react"
+import React, { useMemo } from "react"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
 
 interface ElectricBorderProps {
     borderColor?: string
     preview?: boolean
     showGlow?: boolean
+    speed?:number
     glowIntensity?: number
     borderRadius?: number
     borderThickness?: number
@@ -25,11 +26,20 @@ export default function ElectricBorder(props: ElectricBorderProps) {
         glowIntensity = 0.6,
         borderRadius = 24,
         borderThickness = 2,
+        speed = 6
     } = props
+
+    // Ensure unique filter id per instance to avoid DOM collisions and slow starts
+    const filterId = useMemo(
+        () => `turbulent-displace-${Math.random().toString(36).slice(2)}`,
+        []
+    )
 
     const shouldAnimate =
         RenderTarget.current() === RenderTarget.preview ||
         (preview && RenderTarget.current() === RenderTarget.canvas)
+
+
 
     return (
         <div
@@ -46,14 +56,15 @@ export default function ElectricBorder(props: ElectricBorderProps) {
             <svg
                 style={{
                     position: "absolute",
-                    overflow: "visible",
-                    width: "100%",
-                    height: "100%",
+                    overflow: "hidden",
+                    width: 0,
+                    height: 0,
                 }}
+                aria-hidden
             >
                 <defs>
                     <filter
-                        id="turbulent-displace"
+                        id={filterId}
                         colorInterpolationFilters="sRGB"
                         x="-20%"
                         y="-20%"
@@ -222,22 +233,50 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                 }}
             >
                 {/* Electric border layer with filter applied */}
+                {/* Pre-warm the filter on a tiny element to compile before main usage */}
                 <div
+                    style={{
+                        position: "absolute",
+                        width: 1,
+                        height: 1,
+                        opacity: 0,
+                        filter: `url(#${filterId})`,
+                        pointerEvents: "none",
+                    }}
+                />
+                <svg
                     style={{
                         position: "absolute",
                         top: `calc(-${borderThickness / 2}px - 4px)`,
                         left: `calc(-${borderThickness / 2}px - 4px)`,
                         right: `calc(-${borderThickness / 2}px + 2px)`,
                         bottom: `calc(-${borderThickness / 2}px + 2px)`,
-                        border: `${borderThickness}px solid ${borderColor}`,
-                        borderRadius: `${borderRadius}px`,
-                        filter: "url(#turbulent-displace)",
                         pointerEvents: "none",
                         zIndex: 10,
                         margin: "0",
                         padding: "0",
+                        willChange: "filter",
+                        contain: "paint",
+                        backfaceVisibility: "hidden",
+                        transform: "translateZ(0)",
                     }}
-                />
+                    width="100%"
+                    height="100%"
+                >
+                    <rect
+                        x={0}
+                        y={0}
+                        width="100%"
+                        height="100%"
+                        rx={borderRadius}
+                        ry={borderRadius}
+                        fill="none"
+                        stroke={borderColor}
+                        strokeWidth={borderThickness}
+                        filter={`url(#${filterId})`}
+                        vectorEffect="non-scaling-stroke"
+                    />
+                </svg>
                 {/* Glow layers - only shown when showGlow is true */}
                 {showGlow && (
                     <>
@@ -415,6 +454,14 @@ addPropertyControls(ElectricBorder, {
         step: 1,
         defaultValue: 24,
         unit:"px"
+    },
+    speed:{
+        type:ControlType.Number,
+        title:"Speed",
+        min:0,
+        max:10,
+        step:0.1,
+        defaultValue:1,
     },
     borderThickness: {
         type: ControlType.Number,

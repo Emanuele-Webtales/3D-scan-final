@@ -113,8 +113,14 @@ export default function LiquidMask(props: Props) {
     const [isMobile, setIsMobile] = useState(false)
     useEffect(() => {
         const checkMobile = () => {
-            const coarse = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(pointer: coarse)").matches : false
-            const small = typeof window !== "undefined" && window.matchMedia ? window.matchMedia("(max-width: 768px)").matches : false
+            const coarse =
+                typeof window !== "undefined" && window.matchMedia
+                    ? window.matchMedia("(pointer: coarse)").matches
+                    : false
+            const small =
+                typeof window !== "undefined" && window.matchMedia
+                    ? window.matchMedia("(max-width: 768px)").matches
+                    : false
             setIsMobile(coarse || small)
         }
         checkMobile()
@@ -124,7 +130,11 @@ export default function LiquidMask(props: Props) {
 
     // Motion/value state for hover scaling
     const scaleMV = useMotionValue(1)
-    const [springOptions, setSpringOptions] = useState<any>(() => ({ stiffness: 170, damping: 26, mass: 1 }))
+    const [springOptions, setSpringOptions] = useState<any>(() => ({
+        stiffness: 170,
+        damping: 26,
+        mass: 1,
+    }))
     const springScaleMV = useSpring(1, springOptions)
     const tweenAnimRef = useRef<any>(null)
     const hoverScaleRef = useRef<number>(hover?.scale ?? 1.2)
@@ -135,13 +145,24 @@ export default function LiquidMask(props: Props) {
     useEffect(() => {
         const tr = hover?.transition || {}
         if (tr && tr.type === "spring") {
-            if (typeof tr.stiffness === "number" || typeof tr.damping === "number" || typeof tr.mass === "number") {
+            if (
+                typeof tr.stiffness === "number" ||
+                typeof tr.damping === "number" ||
+                typeof tr.mass === "number"
+            ) {
                 setSpringOptions({
-                    stiffness: typeof tr.stiffness === "number" ? tr.stiffness : 170,
+                    stiffness:
+                        typeof tr.stiffness === "number" ? tr.stiffness : 170,
                     damping: typeof tr.damping === "number" ? tr.damping : 26,
                     mass: typeof tr.mass === "number" ? tr.mass : 1,
-                    restDelta: typeof tr.restDelta === "number" ? tr.restDelta : undefined,
-                    restSpeed: typeof tr.restSpeed === "number" ? tr.restSpeed : undefined,
+                    restDelta:
+                        typeof tr.restDelta === "number"
+                            ? tr.restDelta
+                            : undefined,
+                    restSpeed:
+                        typeof tr.restSpeed === "number"
+                            ? tr.restSpeed
+                            : undefined,
                 })
             } else {
                 const bounce = Math.max(0, Math.min(1, tr.bounce ?? 0))
@@ -182,7 +203,10 @@ export default function LiquidMask(props: Props) {
         (target: number) => {
             const clamped = Math.max(1, Math.min(3, target))
             const tr: any = hover?.transition || {}
-            if (tweenAnimRef.current && typeof tweenAnimRef.current.stop === "function") {
+            if (
+                tweenAnimRef.current &&
+                typeof tweenAnimRef.current.stop === "function"
+            ) {
                 tweenAnimRef.current.stop()
                 tweenAnimRef.current = null
             }
@@ -190,7 +214,8 @@ export default function LiquidMask(props: Props) {
                 springScaleMV.set(clamped)
             } else if (tr && tr.type === "tween") {
                 tweenAnimRef.current = animate(scaleMV, clamped, {
-                    duration: typeof tr.duration === "number" ? tr.duration : 0.5,
+                    duration:
+                        typeof tr.duration === "number" ? tr.duration : 0.5,
                     delay: typeof tr.delay === "number" ? tr.delay : 0,
                     ease: tr.ease,
                 })
@@ -231,14 +256,7 @@ export default function LiquidMask(props: Props) {
         }, 100) // 100ms debounce
 
         return () => clearTimeout(timeoutId)
-    }, [
-        radius,
-        blur,
-        circleBoost,
-        texture,
-        timeSpeed,
-        preview,
-    ])
+    }, [radius, blur, circleBoost, texture, timeSpeed, preview])
 
     // Value mapping functions to convert normalized property values to internal shader values
     const mapRadius = useCallback((normalizedRadius: number) => {
@@ -919,7 +937,7 @@ addPropertyControls(LiquidMask, {
     },
     borderRadius: {
         type: ControlType.Number,
-        title: "Border radius",
+        title: "Radius",
         min: 0,
         max: 100,
         step: 1,
@@ -937,7 +955,7 @@ addPropertyControls(LiquidMask, {
     },
     blur: {
         type: ControlType.Number,
-        title: "Blur",
+        title: "Interaction",
         min: 0,
         max: 1,
         step: 0.01,
@@ -958,7 +976,7 @@ addPropertyControls(LiquidMask, {
         title: "Texture",
         min: 0,
         max: 1,
-        step: 0.01,
+        step: 0.1,
         defaultValue: 0.5,
         unit: "",
     },

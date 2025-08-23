@@ -30,6 +30,7 @@ type Props = {
     strength?: number
     centerX?: number
     centerY?: number
+    smoothing?: number
     style?: React.CSSProperties
 }
 
@@ -47,6 +48,7 @@ export default function BulgeDistortion(props: Props) {
         strength = 1.1,
         centerX = 0.5,
         centerY = 0.5,
+        smoothing = 0.7,
         style,
     } = props
 
@@ -121,6 +123,11 @@ export default function BulgeDistortion(props: Props) {
             uAutoRotationX: { value: 0.0 },
             uZoom: { value: 1.0 },
         }
+
+        // Mouse smoothing vectors
+        const targetMouse = new Vector2(centerX, centerY)
+        const currentMouse = new Vector2(centerX, centerY)
+        uniforms.uMousePosition.value.copy(currentMouse)
 
         const vertexShader = `
             varying vec2 vUv;
@@ -274,7 +281,7 @@ export default function BulgeDistortion(props: Props) {
             const y = 1 - (clientY - rect.top) / Math.max(rect.height, 1)
             const clampedX = Math.max(0, Math.min(1, x))
             const clampedY = Math.max(0, Math.min(1, y))
-            uniforms.uMousePosition.value.set(clampedX, clampedY)
+            targetMouse.set(clampedX, clampedY)
         }
 
         const onMouseMove = (e: MouseEvent) => {
@@ -307,7 +314,27 @@ export default function BulgeDistortion(props: Props) {
         }
 
         let raf = 0
+        let lastTime = performance.now()
         const loop = () => {
+            const now = performance.now()
+            const dt = Math.max(0, (now - lastTime) / 1000)
+            lastTime = now
+            // smoothing semantics:
+            //  - s = 0 => disabled (instant follow)
+            //  - s in (0,1] => exponential smoothing with bounded time constant
+            const s = Math.max(0, Math.min(1, smoothing))
+            if (s === 0) {
+                currentMouse.copy(targetMouse)
+            } else {
+                // Map s to a time constant in a safe range to avoid glacial motion
+                // Smaller tau => snappier; larger tau => smoother
+                const tauMin = 0.04 // ~fast catch-up
+                const tauMax = 0.25 // smooth but still responsive
+                const tau = tauMin + (tauMax - tauMin) * s
+                const alpha = 1 - Math.exp(-dt / Math.max(1e-6, tau))
+                currentMouse.lerp(targetMouse, alpha)
+            }
+            uniforms.uMousePosition.value.set(currentMouse.x, currentMouse.y)
             raf = requestAnimationFrame(loop)
             render()
         }
@@ -315,6 +342,8 @@ export default function BulgeDistortion(props: Props) {
         loop()
 
         // Initialize mouse at props center
+        targetMouse.set(centerX, centerY)
+        currentMouse.set(centerX, centerY)
         uniforms.uMousePosition.value.set(centerX, centerY)
         // Listeners
         container.addEventListener("mousemove", onMouseMove)
@@ -330,7 +359,7 @@ export default function BulgeDistortion(props: Props) {
             material.dispose()
             renderer.dispose()
         }
-    }, [image?.src, radius, strength, centerX, centerY])
+    }, [image?.src, radius, strength, centerX, centerY, smoothing])
 
     // If no image yet, show helpful message
     const hasImage = !!(image && image.src)
@@ -397,6 +426,16 @@ addPropertyControls(BulgeDistortion, {
     image: {
         type: ControlType.ResponsiveImage,
         title: "Image",
+    },
+    smoothing: {
+        type: ControlType.Number,
+        title: "Smoothing",
+        defaultValue: 0.7,
+        min: 0,
+        max: 1,
+        step: 0.01,
+        displayStepper: false,
+        description: "0=off (instant), higher=smoother (capped for responsiveness)",
     },
 })
 

@@ -9,13 +9,15 @@ interface ElectricBorderProps {
     showGlow?: boolean
     glowIntensity?: number
     speed?:number
+    intensity?: number
+    borderThickness?: number
 }
 
 /**
- * @framerSupportedLayoutWidth any
- * @framerSupportedLayoutHeight any
+ * @framerSupportedLayoutWidth fixed
+ * @framerSupportedLayoutHeight fixed
  * @framerIntrinsicWidth 300
- * @framerIntrinsicHeight 500
+ * @framerIntrinsicHeight 400
  * @framerDisableUnlink
  */
 export default function ElectricBorder(props: ElectricBorderProps) {
@@ -24,14 +26,22 @@ export default function ElectricBorder(props: ElectricBorderProps) {
         preview = false,
         showGlow = true,
         glowIntensity = 0.6,
-        speed = 4.44
+        speed = 4.44,
+        intensity = 5,
+        borderThickness = 2
     } = props
 
     const shouldAnimate =
-        RenderTarget.current() === RenderTarget.preview ||
-        (preview && RenderTarget.current() === RenderTarget.canvas)
+        speed > 0 && (RenderTarget.current() === RenderTarget.preview ||
+        (preview && RenderTarget.current() === RenderTarget.canvas))
 
-    const duration = 10 - speed*9/10
+    // Calculate duration based on speed (max time - speed* (max time - min time)/max speed)
+    const duration = 20 - speed*18/10
+    
+    // Calculate intensity-based values for spikiness
+    const baseFreq = 0.005 + (intensity * 0.0095) // 0.005 to 0.1
+    const octaves = Math.round(3 + (intensity * 0.9)) // 3 to 12
+    const displacementScale = 10 + (intensity * 5) // 10 to 60
 
     return (
         <div
@@ -55,22 +65,22 @@ export default function ElectricBorder(props: ElectricBorderProps) {
             >
                 <defs>
         <filter id="turbulent-displace" colorInterpolationFilters="sRGB" x="-20%" y="-20%" width="140%" height="140%">
-          <feTurbulence type="turbulence" baseFrequency="0.02" numOctaves="10" result="noise1" seed="1" />
+          <feTurbulence type="turbulence" baseFrequency={baseFreq} numOctaves={octaves} result="noise1" seed="1" />
           <feOffset in="noise1" dx="0" dy="0" result="offsetNoise1">
             {shouldAnimate && <animate attributeName="dy" values="700; 0" dur={`${duration}s`} repeatCount="indefinite" calcMode="linear" />}
           </feOffset>
   
-          <feTurbulence type="turbulence" baseFrequency="0.02" numOctaves="10" result="noise2" seed="1" />
+          <feTurbulence type="turbulence" baseFrequency={baseFreq} numOctaves={octaves} result="noise2" seed="1" />
           <feOffset in="noise2" dx="0" dy="0" result="offsetNoise2">
             {shouldAnimate && <animate attributeName="dy" values="0; -700" dur={`${duration}s`} repeatCount="indefinite" calcMode="linear" />}
           </feOffset>
   
-          <feTurbulence type="turbulence" baseFrequency="0.02" numOctaves="10" result="noise1" seed="2" />
+          <feTurbulence type="turbulence" baseFrequency={baseFreq} numOctaves={octaves} result="noise1" seed="2" />
           <feOffset in="noise1" dx="0" dy="0" result="offsetNoise3">
             {shouldAnimate && <animate attributeName="dx" values="490; 0" dur={`${duration}s`} repeatCount="indefinite" calcMode="linear" />}
           </feOffset>
   
-          <feTurbulence type="turbulence" baseFrequency="0.02" numOctaves="10" result="noise2" seed="2" />
+          <feTurbulence type="turbulence" baseFrequency={baseFreq} numOctaves={octaves} result="noise2" seed="2" />
           <feOffset in="noise2" dx="0" dy="0" result="offsetNoise4">
             {shouldAnimate && <animate attributeName="dx" values="0; -490" dur={`${duration}s`} repeatCount="indefinite" calcMode="linear" />}
           </feOffset>
@@ -79,7 +89,7 @@ export default function ElectricBorder(props: ElectricBorderProps) {
           <feComposite in="offsetNoise3" in2="offsetNoise4" result="part2" />
           <feBlend in="part1" in2="part2" mode="color-dodge" result="combinedNoise" />
   
-          <feDisplacementMap in="SourceGraphic" in2="combinedNoise" scale="30" xChannelSelector="R" yChannelSelector="B" />
+          <feDisplacementMap in="SourceGraphic" in2="combinedNoise" scale={displacementScale} xChannelSelector="R" yChannelSelector="B" />
         </filter>
       </defs>
             </svg>
@@ -100,11 +110,11 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                 <div
                     style={{
                         position: "absolute",
-                        top: "-4px",
-                        left: "-4px",
-                        right: "2px",
-                        bottom: "2px",
-                        border: `2px solid ${borderColor}`,
+                        top:  `calc(-4px - ${borderThickness/2}px)`,
+                        left: `calc(-4px - ${borderThickness/2}px)`,
+                        right: `calc(2px - ${borderThickness/2}px)`,
+                        bottom: `calc(2px - ${borderThickness/2}px)`,
+                        border: `${borderThickness}px solid ${borderColor}`,
                         borderRadius: "24px",
                         filter: "url(#turbulent-displace)",
                         pointerEvents: "none",
@@ -139,7 +149,7 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                         {/* Glow layer 1 - subtle blur */}
                         <div
                             style={{
-                                border: `2px solid ${borderColor}${Math.floor(
+                                border: `${borderThickness}px solid ${borderColor}${Math.floor(
                                     glowIntensity * 255
                                 )
                                     .toString(16)
@@ -163,7 +173,7 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                         {/* Glow layer 2 - medium blur */}
                         <div
                             style={{
-                                border: `2px solid ${borderColor}${Math.floor(
+                                    border: `${borderThickness}px solid ${borderColor}${Math.floor(
                                     glowIntensity * 255
                                 )
                                     .toString(16)
@@ -282,7 +292,7 @@ addPropertyControls(ElectricBorder, {
         min: 0.1,
         max: 1,
         step: 0.1,
-        defaultValue: 0.6,
+        defaultValue: 0.5,
         description: "Controls the intensity of the glow effects",
         hidden: (props) => !props.showGlow,
     },
@@ -292,12 +302,29 @@ addPropertyControls(ElectricBorder, {
         min:0,
         max:10,
         step:0.1,
-        defaultValue:4.4,
+        defaultValue:5,
+    },
+    intensity:{
+        type:ControlType.Number,
+        title:"Intensity",
+        min:0,
+        max:10,
+        step:0.5,
+        defaultValue:2.5,
+        description:"Controls the spikiness of the electric border effect",
+    },
+    borderThickness:{
+        type:ControlType.Number,
+        title:"Thickness",
+        min:1,
+        max:10,
+        step:1,
+        defaultValue:2,
     },
     borderColor: {
         type: ControlType.Color,
         title: "Border Color",
-        defaultValue: "#dd8448",
+        defaultValue: "#FFD9BF",
         description:
             "More components at [Framer University](https://frameruni.link/cc).",
     },

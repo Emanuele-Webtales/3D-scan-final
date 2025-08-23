@@ -32,6 +32,7 @@ type Props = {
     centerY?: number
     smoothing?: number
     cursorMode?: "Opposite" | "Follow"
+    movement?: number
     style?: React.CSSProperties
 }
 
@@ -51,6 +52,7 @@ export default function BulgeDistortion(props: Props) {
         centerY = 0.5,
         smoothing = 0.7,
         cursorMode = "Opposite",
+        movement = 1.0,
         style,
     } = props
 
@@ -125,6 +127,7 @@ export default function BulgeDistortion(props: Props) {
             uAutoRotationX: { value: 0.0 },
             uZoom: { value: 1.0 },
             uCursorInvert: { value: cursorMode === "Follow" ? 1.0 : -1.0 },
+            uMovement: { value: movement },
         }
 
         // Mouse smoothing vectors
@@ -157,6 +160,7 @@ export default function BulgeDistortion(props: Props) {
             uniform float uAutoRotationX;
             uniform float uZoom;
             uniform float uCursorInvert;
+            uniform float uMovement;
 
             #define PI 3.1415926535897932384626433832795
             #define CAMERA_DIST 25.0
@@ -229,8 +233,8 @@ export default function BulgeDistortion(props: Props) {
                     if (t >= 1.0) {
                         float mouseX = (uMousePosition.x - 0.5) * uCursorInvert;
                         float mouseY = (uMousePosition.y - 0.5) * uCursorInvert;
-                        float mouseInfluenceX = 0.3;
-                        float mouseInfluenceY = 0.2;
+                        float mouseInfluenceX = 0.3 * clamp(uMovement, 0.0, 1.0);
+                        float mouseInfluenceY = 0.2 * clamp(uMovement, 0.0, 1.0);
                         float mouseRotationX = mouseX * mouseInfluenceX * PI;
                         float mouseRotationY = mouseY * mouseInfluenceY * PI;
                         float autoRotation = uAutoRotationX;
@@ -363,7 +367,7 @@ export default function BulgeDistortion(props: Props) {
             material.dispose()
             renderer.dispose()
         }
-    }, [image?.src, radius, strength, centerX, centerY, smoothing, cursorMode])
+    }, [image?.src, radius, strength, centerX, centerY, smoothing, cursorMode, movement])
 
     // If no image yet, show helpful message
     const hasImage = !!(image && image.src)
@@ -448,6 +452,16 @@ addPropertyControls(BulgeDistortion, {
         optionTitles: ["Opposite", "Follow"],
         defaultValue: "Opposite",
         displaySegmentedControl: true,
+    },
+    movement: {
+        type: ControlType.Number,
+        title: "Movement",
+        defaultValue: 1.0,
+        min: 0,
+        max: 1,
+        step: 0.1,
+        displayStepper: false,
+        description: "Scale of focus movement (0–1); 0 disables hover",
     },
 })
 

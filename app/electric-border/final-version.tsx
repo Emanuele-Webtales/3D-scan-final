@@ -23,7 +23,6 @@ interface ElectricBorderProps {
  * @framerDisableUnlink
  */
 export default function ElectricBorder({
-    children,
     borderColor = "#FFD9BF",
     preview = true,
     showGlow = true,
@@ -31,7 +30,6 @@ export default function ElectricBorder({
     speed = 5,
     intensity = 2.5,
     borderThickness = 2,
-    className,
     style,
 }: ElectricBorderProps) {
     const rawId = useId().replace(/[:]/g, "")
@@ -43,6 +41,11 @@ export default function ElectricBorder({
     const shouldAnimate =
         speed > 0 && (RenderTarget.current() === RenderTarget.preview ||
         (preview && RenderTarget.current() === RenderTarget.canvas))
+
+    // Calculate intensity-based values for spikiness (same as fallback version)
+    const baseFreq = 0.005 + (intensity * 0.0095) // 0.005 to 0.1
+    const octaves = Math.round(3 + (intensity * 0.9)) // 3 to 12
+    const displacementScale = 10 + (intensity * 5) // 10 to 60
 
     const updateAnim = () => {
         const svg = svgRef.current
@@ -89,7 +92,7 @@ export default function ElectricBorder({
         )
 
         const disp = svg.querySelector("feDisplacementMap")
-        if (disp) disp.setAttribute("scale", String(30 * (intensity || 1)))
+        if (disp) disp.setAttribute("scale", String(displacementScale))
 
         const filterEl = svg.querySelector(`#${CSS.escape(filterId)}`)
         if (filterEl) {
@@ -120,7 +123,7 @@ export default function ElectricBorder({
             updateAnim()
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [speed, intensity, shouldAnimate])
+    }, [speed, intensity, shouldAnimate, baseFreq, octaves, displacementScale])
 
     useLayoutEffect(() => {
         if (!rootRef.current) return
@@ -180,8 +183,8 @@ export default function ElectricBorder({
                     >
                         <feTurbulence
                             type="turbulence"
-                            baseFrequency="0.02"
-                            numOctaves="10"
+                            baseFrequency={baseFreq}
+                            numOctaves={octaves}
                             result="noise1"
                             seed="1"
                         />
@@ -204,8 +207,8 @@ export default function ElectricBorder({
 
                         <feTurbulence
                             type="turbulence"
-                            baseFrequency="0.02"
-                            numOctaves="10"
+                            baseFrequency={baseFreq}
+                            numOctaves={octaves}
                             result="noise2"
                             seed="1"
                         />
@@ -228,8 +231,8 @@ export default function ElectricBorder({
 
                         <feTurbulence
                             type="turbulence"
-                            baseFrequency="0.02"
-                            numOctaves="10"
+                            baseFrequency={baseFreq}
+                            numOctaves={octaves}
                             result="noise1"
                             seed="2"
                         />
@@ -252,8 +255,8 @@ export default function ElectricBorder({
 
                         <feTurbulence
                             type="turbulence"
-                            baseFrequency="0.02"
-                            numOctaves="10"
+                            baseFrequency={baseFreq}
+                            numOctaves={octaves}
                             result="noise2"
                             seed="2"
                         />
@@ -293,7 +296,7 @@ export default function ElectricBorder({
                         <feDisplacementMap
                             in="SourceGraphic"
                             in2="combinedNoise"
-                            scale="30"
+                            scale={displacementScale}
                             xChannelSelector="R"
                             yChannelSelector="B"
                         />
@@ -310,6 +313,8 @@ export default function ElectricBorder({
                     right: 0,
                     width: `calc(100% + ${borderThickness / 2}px)`,
                     height: `calc(100% + ${borderThickness / 2}px)`,
+                    //width: "100%",
+                    //height: "100%",
                     pointerEvents: "none",
                 }}
             >
@@ -389,7 +394,7 @@ export default function ElectricBorder({
                         pointerEvents: "auto",
                     }}
                 >
-                    {children}
+                    
                 </div>
         </div>
     )
@@ -406,7 +411,7 @@ addPropertyControls(ElectricBorder, {
         type: ControlType.Boolean,
         title: "Glow",
         defaultValue: true,
-        description: "Enable or disable the glow effects around the border",
+       
     },
     glowIntensity: {
         type: ControlType.Number,
@@ -415,16 +420,16 @@ addPropertyControls(ElectricBorder, {
         max: 1,
         step: 0.1,
         defaultValue: 0.5,
-        description: "Controls the intensity of the glow effects",
+        
         hidden: (props) => !props.showGlow,
     },
     speed: {
         type: ControlType.Number,
         title: "Speed",
         min: 0,
-        max: 10,
+        max: 3,
         step: 0.1,
-        defaultValue: 5,
+        defaultValue:1.5,
     },
     intensity: {
         type: ControlType.Number,
@@ -433,7 +438,7 @@ addPropertyControls(ElectricBorder, {
         max: 10,
         step: 0.5,
         defaultValue: 2.5,
-        description: "Controls the spikiness of the electric border effect",
+        
     },
     borderThickness: {
         type: ControlType.Number,

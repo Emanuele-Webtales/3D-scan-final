@@ -33,6 +33,7 @@ type Props = {
     smoothing?: number
     cursorMode?: "Opposite" | "Follow"
     movement?: number
+    fishEyeIntensity?: number
     style?: React.CSSProperties
 }
 
@@ -53,6 +54,7 @@ export default function BulgeDistortion(props: Props) {
         smoothing = 0.7,
         cursorMode = "Opposite",
         movement = 1.0,
+        fishEyeIntensity = 1.0,
         style,
     } = props
 
@@ -128,6 +130,7 @@ export default function BulgeDistortion(props: Props) {
             uZoom: { value: 1.0 },
             uCursorInvert: { value: cursorMode === "Follow" ? 1.0 : -1.0 },
             uMovement: { value: movement },
+            uFishEyeIntensity: { value: fishEyeIntensity },
         }
 
         // Mouse smoothing vectors
@@ -161,6 +164,7 @@ export default function BulgeDistortion(props: Props) {
             uniform float uZoom;
             uniform float uCursorInvert;
             uniform float uMovement;
+            uniform float uFishEyeIntensity;
             
 
             #define PI 3.1415926535897932384626433832795
@@ -191,6 +195,9 @@ export default function BulgeDistortion(props: Props) {
                 vec2 p = vScreenPosition.xy;
                 vec4 fragColor = vec4(0.0);
 
+                // Use uFishEyeIntensity to control the fish eye effect
+                float intensity = clamp(uFishEyeIntensity, 0.0, 1.0);
+                
                 float t = clamp(uUnwrapProgress, 0.0, 1.0);
                 float zoom = pow(2.0 * t, 5.0) + 1.0;
                 zoom *= uZoom;
@@ -223,33 +230,35 @@ export default function BulgeDistortion(props: Props) {
                     float v = 1.0 - acos(normal.y) / PI;
                     vec2 sphereCoords = vec2(u, v);
 
-                    p = sphereCoords * zoom;
-                    vec3 color = getColor(p, uTexture);
+                    // Apply mouse interaction always (not just at intensity = 1)
+                    float mouseX = (uMousePosition.x - 0.5) * uCursorInvert;
+                    float mouseY = (uMousePosition.y - 0.5) * uCursorInvert;
+                    float mouseInfluenceX = 0.3 * clamp(uMovement, 0.0, 1.0);
+                    float mouseInfluenceY = 0.2 * clamp(uMovement, 0.0, 1.0);
+                    float mouseRotationX = mouseX * mouseInfluenceX * PI;
+                    float mouseRotationY = mouseY * mouseInfluenceY * PI;
+                    float autoRotation = uAutoRotationX;
 
-                    vec3 fisheyeDir = getFishEye(vScreenPosition.xy, 1.4);
-                    float fisheyeMix = smoothstep(0.0, 1.0, t);
-                    vec2 finalCoords = mix(sphereCoords, fisheyeDir.xy, fisheyeMix);
-                    color = getColor(finalCoords, uTexture);
+                    // Scale the fish eye distortion by intensity, not the image
+                    vec3 fisheyeDir = getFishEye(vScreenPosition.xy, 1.4 * intensity);
+                    
+                    // Apply mouse rotations to the fish eye direction
+                    mat2 mouseRotationMatrixX = mat2(cos(mouseRotationX), -sin(mouseRotationX), sin(mouseRotationX), cos(mouseRotationX));
+                    mat2 mouseRotationMatrixY = mat2(cos(mouseRotationY), -sin(mouseRotationY), sin(mouseRotationY), cos(mouseRotationY));
+                    mat2 autoRotationMatrix = mat2(cos(autoRotation), -sin(autoRotation), sin(autoRotation), cos(autoRotation));
+                    fisheyeDir.xz = mouseRotationMatrixX * fisheyeDir.xz;
+                    fisheyeDir.yz = mouseRotationMatrixY * fisheyeDir.yz;
+                    fisheyeDir.xz = autoRotationMatrix * fisheyeDir.xz;
 
-                    if (t >= 1.0) {
-                        float mouseX = (uMousePosition.x - 0.5) * uCursorInvert;
-                        float mouseY = (uMousePosition.y - 0.5) * uCursorInvert;
-                        float mouseInfluenceX = 0.3 * clamp(uMovement, 0.0, 1.0);
-                        float mouseInfluenceY = 0.2 * clamp(uMovement, 0.0, 1.0);
-                        float mouseRotationX = mouseX * mouseInfluenceX * PI;
-                        float mouseRotationY = mouseY * mouseInfluenceY * PI;
-                        float autoRotation = uAutoRotationX;
+                    // Blend between flat coordinates (p) and fish eye coordinates
+                    vec2 flatCoords = p;
+                    vec2 fisheyeCoords = fisheyeDir.xy;
+                    vec2 finalCoords = mix(flatCoords, fisheyeCoords, intensity);
+                    
+                    vec3 color = getColor(finalCoords, uTexture);
 
-                        mat2 mouseRotationMatrixX = mat2(cos(mouseRotationX), -sin(mouseRotationX), sin(mouseRotationX), cos(mouseRotationX));
-                        mat2 mouseRotationMatrixY = mat2(cos(mouseRotationY), -sin(mouseRotationY), sin(mouseRotationY), cos(mouseRotationY));
-                        mat2 autoRotationMatrix = mat2(cos(autoRotation), -sin(autoRotation), sin(autoRotation), cos(autoRotation));
-                        fisheyeDir.xz = mouseRotationMatrixX * fisheyeDir.xz;
-                        fisheyeDir.yz = mouseRotationMatrixY * fisheyeDir.yz;
-                        fisheyeDir.xz = autoRotationMatrix * fisheyeDir.xz;
-                        color = getColor(fisheyeDir.xy, uTexture);
-                    }
-
-                    float fish_eye = smoothstep(2.0, 1.6, length(vScreenPosition.xy)) * 0.15 + 1.0;
+                    // Apply fish eye highlighting effect based on intensity
+                    float fish_eye = mix(1.0, smoothstep(2.0, 1.6, length(vScreenPosition.xy)) * 0.15 + 1.0, intensity);
                     fragColor = vec4(color * fish_eye, 1.0);
                 }
 
@@ -368,7 +377,17 @@ export default function BulgeDistortion(props: Props) {
             material.dispose()
             renderer.dispose()
         }
-    }, [image?.src, radius, strength, centerX, centerY, smoothing, cursorMode, movement])
+    }, [
+        image?.src,
+        radius,
+        strength,
+        centerX,
+        centerY,
+        smoothing,
+        cursorMode,
+        movement,
+        fishEyeIntensity,
+    ])
 
     // If no image yet, show helpful message
     const hasImage = !!(image && image.src)
@@ -436,15 +455,23 @@ addPropertyControls(BulgeDistortion, {
         type: ControlType.ResponsiveImage,
         title: "Image",
     },
+    fishEyeIntensity: {
+        type: ControlType.Number,
+        title: "Scale",
+        defaultValue: 1.0,
+        min: 0,
+        max: 1,
+        step: 0.1,
+        displayStepper: false,
+    },
     smoothing: {
         type: ControlType.Number,
         title: "Smoothing",
         defaultValue: 0.7,
         min: 0,
         max: 1,
-        step: 0.01,
+        step: 0.05,
         displayStepper: false,
-        description: "0=off (instant), higher=smoother (capped for responsiveness)",
     },
     cursorMode: {
         type: ControlType.Enum,
@@ -453,6 +480,7 @@ addPropertyControls(BulgeDistortion, {
         optionTitles: ["Opposite", "Follow"],
         defaultValue: "Opposite",
         displaySegmentedControl: true,
+        segmentedControlDirection: "vertical",
     },
     movement: {
         type: ControlType.Number,
@@ -462,7 +490,8 @@ addPropertyControls(BulgeDistortion, {
         max: 1,
         step: 0.1,
         displayStepper: false,
-        description: "Scale of focus movement (0–1); 0 disables hover",
+        description:
+            "More components at [Framer University](https://frameruni.link/cc).",
     },
 })
 

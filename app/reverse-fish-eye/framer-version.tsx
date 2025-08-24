@@ -161,6 +161,7 @@ export default function BulgeDistortion(props: Props) {
             uniform float uZoom;
             uniform float uCursorInvert;
             uniform float uMovement;
+            
 
             #define PI 3.1415926535897932384626433832795
             #define CAMERA_DIST 25.0

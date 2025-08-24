@@ -1,4 +1,4 @@
-import React, { useMemo } from "react"
+import React, { useMemo, useRef, useLayoutEffect } from "react"
 import { addPropertyControls, ControlType, RenderTarget } from "framer"
 
 interface ElectricBorderProps {
@@ -35,14 +35,63 @@ export default function ElectricBorder(props: ElectricBorderProps) {
         []
     )
 
+    // Refs for dynamic sizing
+    const rootRef = useRef<HTMLDivElement>(null)
+    const svgRef = useRef<SVGSVGElement>(null)
+
     const shouldAnimate =
         RenderTarget.current() === RenderTarget.preview ||
         (preview && RenderTarget.current() === RenderTarget.canvas)
 
+    // Function to update animation values based on component size
+    const updateAnim = () => {
+        if (!svgRef.current || !rootRef.current) return
 
+        const host = rootRef.current
+        const svg = svgRef.current
+
+        // Get actual component dimensions
+        const width = Math.max(1, Math.round(host.clientWidth || host.getBoundingClientRect().width || 0))
+        const height = Math.max(1, Math.round(host.clientHeight || host.getBoundingClientRect().height || 0))
+
+        // Update dy animations (vertical movement)
+        const dyAnims = svg.querySelectorAll('feOffset > animate[attributeName="dy"]')
+        if (dyAnims.length >= 2) {
+            dyAnims[0].setAttribute("values", `${height}; 0`)
+            dyAnims[1].setAttribute("values", `0; -${height}`)
+        }
+
+        // Update dx animations (horizontal movement)
+        const dxAnims = svg.querySelectorAll('feOffset > animate[attributeName="dx"]')
+        if (dxAnims.length >= 2) {
+            dxAnims[0].setAttribute("values", `${width}; 0`)
+            dxAnims[1].setAttribute("values", `0; -${width}`)
+        }
+
+        // Update animation duration based on speed
+        const baseDur = 6
+        const dur = Math.max(0.001, baseDur / (speed || 1))
+        const allAnims = [...dyAnims, ...dxAnims]
+        allAnims.forEach((anim) => {
+            if (anim) anim.setAttribute("dur", `${dur}s`)
+        })
+    }
+
+    // Set up ResizeObserver for dynamic sizing
+    useLayoutEffect(() => {
+        if (!rootRef.current) return
+
+        const ro = new ResizeObserver(() => updateAnim())
+        ro.observe(rootRef.current)
+        updateAnim() // Initial update
+
+        return () => ro.disconnect()
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [speed]) // Re-run when speed changes
 
     return (
         <div
+            ref={rootRef}
             style={{
                 width: "100%",
                 height: "100%",
@@ -54,6 +103,7 @@ export default function ElectricBorder(props: ElectricBorderProps) {
             }}
         >
             <svg
+                ref={svgRef}
                 style={{
                     position: "absolute",
                     overflow: "hidden",
@@ -87,8 +137,8 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                             {shouldAnimate && (
                                 <animate
                                     attributeName="dy"
-                                    values="700; 0"
-                                    dur="6s"
+                                    values="100; 0"
+                                    dur={`${Math.max(0.001, 6 / (speed || 1))}s`}
                                     repeatCount="indefinite"
                                     calcMode="linear"
                                 />
@@ -111,8 +161,8 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                             {shouldAnimate && (
                                 <animate
                                     attributeName="dy"
-                                    values="0; -700"
-                                    dur="6s"
+                                    values="0; -100"
+                                    dur={`${Math.max(0.001, 6 / (speed || 1))}s`}
                                     repeatCount="indefinite"
                                     calcMode="linear"
                                 />
@@ -135,8 +185,8 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                             {shouldAnimate && (
                                 <animate
                                     attributeName="dx"
-                                    values="490; 0"
-                                    dur="6s"
+                                    values="100; 0"
+                                    dur={`${Math.max(0.001, 6 / (speed || 1))}s`}
                                     repeatCount="indefinite"
                                     calcMode="linear"
                                 />
@@ -159,8 +209,8 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                             {shouldAnimate && (
                                 <animate
                                     attributeName="dx"
-                                    values="0; -490"
-                                    dur="6s"
+                                    values="0; -100"
+                                    dur={`${Math.max(0.001, 6 / (speed || 1))}s`}
                                     repeatCount="indefinite"
                                     calcMode="linear"
                                 />
@@ -242,15 +292,14 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                         opacity: 0,
                         filter: `url(#${filterId})`,
                         pointerEvents: "none",
+                        overflow:"visible",
                     }}
                 />
                 <svg
                     style={{
                         position: "absolute",
-                        top: `calc(-${borderThickness / 2}px - 4px)`,
-                        left: `calc(-${borderThickness / 2}px - 4px)`,
-                        right: `calc(-${borderThickness / 2}px + 2px)`,
-                        bottom: `calc(-${borderThickness / 2}px + 2px)`,
+                        top:0,
+                        left:0,
                         pointerEvents: "none",
                         zIndex: 10,
                         margin: "0",
@@ -259,13 +308,14 @@ export default function ElectricBorder(props: ElectricBorderProps) {
                         contain: "paint",
                         backfaceVisibility: "hidden",
                         transform: "translateZ(0)",
+                        overflow:"visible",
                     }}
                     width="100%"
                     height="100%"
                 >
                     <rect
-                        x={0}
-                        y={0}
+                        x={`calc(-${borderThickness / 2}px)`}
+                        y={`calc(-${borderThickness / 2}px)`}
                         width="100%"
                         height="100%"
                         rx={borderRadius}

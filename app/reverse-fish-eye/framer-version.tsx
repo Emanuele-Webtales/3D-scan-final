@@ -177,18 +177,30 @@ export default function BulgeDistortion(props: Props) {
             }
 
             vec3 getColor(vec2 p, sampler2D tex) {
-                vec2 baseUV = (p + 1.0) * 0.5; // from [-1,1] => [0,1]
+                // Convert from NDC [-1,1] to UV [0,1]
+                vec2 uv = (p + 1.0) * 0.5;
+                
+                // CSS object-fit: cover implementation
                 float containerAspect = uResolution.x / uResolution.y;
-                float scale = 1.0;
-                if (containerAspect < 1.0) {
-                    scale = containerAspect;
-                    baseUV.x = baseUV.x * scale + (1.0 - scale) * 0.5;
+                float imageAspect = uTextureResolution.x / uTextureResolution.y;
+                
+                vec2 scale = vec2(1.0);
+                
+                // Determine which dimension to scale to fill the container
+                if (containerAspect > imageAspect) {
+                    // Container is wider than image: scale image to fill container width
+                    // This will crop top/bottom of the image
+                    scale.y = imageAspect / containerAspect;
                 } else {
-                    scale = 1.0 / containerAspect;
-                    baseUV.y = baseUV.y * scale + (1.0 - scale) * 0.5;
+                    // Container is taller than image: scale image to fill container height  
+                    // This will crop left/right of the image
+                    scale.x = containerAspect / imageAspect;
                 }
-                vec3 baseColor = texture2D(tex, baseUV).xyz;
-                return baseColor;
+                
+                // Apply scaling
+                vec2 scaledUV = (uv - 0.5) * scale + 0.5;
+                
+                return texture2D(tex, scaledUV).xyz;
             }
 
             void main(){
@@ -461,7 +473,7 @@ addPropertyControls(BulgeDistortion, {
         defaultValue: 1.0,
         min: 0,
         max: 1,
-        step: 0.1,
+        step: 0.025,
         displayStepper: false,
     },
     smoothing: {
@@ -495,4 +507,4 @@ addPropertyControls(BulgeDistortion, {
     },
 })
 
-BulgeDistortion.displayName = "3D Image Distortion"
+BulgeDistortion.displayName = "3D Image Distortion DEV"
